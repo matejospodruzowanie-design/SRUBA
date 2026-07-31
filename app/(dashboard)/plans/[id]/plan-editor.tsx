@@ -24,6 +24,7 @@ import {
 } from "../actions";
 import { ExercisePicker } from "@/components/workout/exercise-picker";
 import { MUSCLE_GROUPS } from "@/lib/constants";
+import { toast } from "sonner";
 
 // ─── Types ───
 
@@ -197,13 +198,17 @@ export function PlanEditor({ routine }: Props) {
   // ─── Save plan metadata ───
 
   const handleSaveMeta = useCallback(async () => {
-    await updateRoutine(routine.id, {
-      name: name.trim() || routine.name,
-      description: description.trim() || undefined,
-    });
-    setEditingName(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
+    try {
+      await updateRoutine(routine.id, {
+        name: name.trim() || routine.name,
+        description: description.trim() || null,
+      });
+      setEditingName(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch {
+      toast.error("Nie udało się zapisać planu");
+    }
   }, [routine.id, routine.name, name, description]);
 
   // ─── Add exercise ───
@@ -216,8 +221,12 @@ export function PlanEditor({ routine }: Props) {
       muscles: { muscleGroup: string; isPrimary: boolean }[];
     }) => {
       setPickerOpen(false);
-      const slot = await addExerciseToRoutine(routine.id, exercise.id);
-      setExercises((prev) => [...prev, slot]);
+      try {
+        const slot = await addExerciseToRoutine(routine.id, exercise.id);
+        setExercises((prev) => [...prev, slot]);
+      } catch {
+        toast.error("Nie udało się dodać ćwiczenia");
+      }
     },
     [routine.id]
   );
@@ -226,11 +235,14 @@ export function PlanEditor({ routine }: Props) {
 
   const handleUpdateSlot = useCallback(
     (slotId: string, data: { targetSets?: number; targetReps?: string; restSeconds?: number }) => {
+      // Optimistic update
+      setExercises((prev) =>
+        prev.map((s) => (s.id === slotId ? { ...s, ...data } : s))
+      );
       startTransition(() => {
-        setExercises((prev) =>
-          prev.map((s) => (s.id === slotId ? { ...s, ...data } : s))
-        );
-        updateRoutineExercise(slotId, data);
+        updateRoutineExercise(slotId, data).catch(() => {
+          toast.error("Nie udało się zapisać ćwiczenia");
+        });
       });
     },
     []
@@ -240,10 +252,14 @@ export function PlanEditor({ routine }: Props) {
 
   const handleRemoveSlot = useCallback(
     (slotId: string) => {
+      const prevExercises = exercises;
       setExercises((prev) => prev.filter((s) => s.id !== slotId));
-      removeRoutineExercise(slotId, routine.id);
+      removeRoutineExercise(slotId, routine.id).catch(() => {
+        toast.error("Nie udało się usunąć ćwiczenia");
+        setExercises(prevExercises); // rollback
+      });
     },
-    [routine.id]
+    [routine.id, exercises]
   );
 
   // ─── Reorder ───
@@ -251,13 +267,17 @@ export function PlanEditor({ routine }: Props) {
   const handleMoveUp = useCallback(
     (idx: number) => {
       if (idx === 0) return;
+      const prev = [...exercises];
       const updated = [...exercises];
       [updated[idx - 1], updated[idx]] = [updated[idx], updated[idx - 1]];
       setExercises(updated);
       reorderRoutineExercises(
         routine.id,
         updated.map((e) => e.id)
-      );
+      ).catch(() => {
+        toast.error("Nie udało się zmienić kolejności");
+        setExercises(prev);
+      });
     },
     [exercises, routine.id]
   );
@@ -265,13 +285,17 @@ export function PlanEditor({ routine }: Props) {
   const handleMoveDown = useCallback(
     (idx: number) => {
       if (idx === exercises.length - 1) return;
+      const prev = [...exercises];
       const updated = [...exercises];
       [updated[idx], updated[idx + 1]] = [updated[idx + 1], updated[idx]];
       setExercises(updated);
       reorderRoutineExercises(
         routine.id,
         updated.map((e) => e.id)
-      );
+      ).catch(() => {
+        toast.error("Nie udało się zmienić kolejności");
+        setExercises(prev);
+      });
     },
     [exercises, routine.id]
   );
@@ -280,9 +304,13 @@ export function PlanEditor({ routine }: Props) {
 
   const handleDelete = useCallback(async () => {
     if (!confirm("Na pewno usunąć ten plan?")) return;
-    await deleteRoutine(routine.id);
-    router.push("/plans");
-    router.refresh();
+    try {
+      await deleteRoutine(routine.id);
+      router.push("/plans");
+      router.refresh();
+    } catch {
+      toast.error("Nie udało się usunąć planu");
+    }
   }, [routine.id, router]);
 
   return (
@@ -363,7 +391,7 @@ export function PlanEditor({ routine }: Props) {
               </div>
               <button
                 onClick={() => setEditingName(true)}
-                className="text-muted-foreground/40 hover:text-amber-400 transition-colors p-1 opacity-0 group-hover:opacity-100"
+                className="text-muted-foreground/40 hover:text-amber-400 transition-colors p-1 opacity-60 sm:opacity-0 sm:group-hover:opacity-100"
               >
                 <Pencil className="h-4 w-4" />
               </button>

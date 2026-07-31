@@ -28,7 +28,6 @@ export async function getMuscleRecovery(
     where: {
       workout: { userId, isActive: false },
       completedAt: { gte: since },
-      weightKg: { not: null },
     },
     include: {
       exercise: {

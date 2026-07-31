@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useOptimistic, useTransition } from "react
 import { Trash2, Flame, TrendingUp, Pencil, Check, X, Plus, Undo2, Calculator, Thermometer } from "lucide-react";
 import { addSet, deleteSet, updateSet } from "@/app/(dashboard)/workout/actions";
 import { plateCalculator } from "@/lib/fitness-utils";
+import { toast } from "sonner";
 
 interface ExerciseLite {
   id: string;
@@ -23,6 +24,7 @@ interface SetWithExercise {
   rpe: number | null;
   completedAt: Date;
   isPR: boolean;
+  isWarmup?: boolean;
 }
 
 interface Props {
@@ -33,6 +35,9 @@ interface Props {
   lastWeight: number | null;
   lastReps: number | null;
   onSetAdded: (prs: unknown[], setRpe?: number) => void;
+  onSetConfirmed?: (confirmedSet: SetWithExercise) => void;
+  onUpdateConfirmed?: (setId: string, data: { weightKg?: number | null; reps?: number; rpe?: number | null }) => void;
+  onDeleteConfirmed?: (setId: string) => void;
 }
 
 const DEFAULT_ROWS = 3;
@@ -55,6 +60,9 @@ export function SetLogger({
   lastWeight,
   lastReps,
   onSetAdded,
+  onSetConfirmed,
+  onUpdateConfirmed,
+  onDeleteConfirmed,
 }: Props) {
   const [isPending, startTransition] = useTransition();
   const [suggestion, setSuggestion] = useState<{ weight: number; reason: string } | null>(null);
@@ -67,6 +75,7 @@ export function SetLogger({
   const [editWeight, setEditWeight] = useState("");
   const [editReps, setEditReps] = useState("");
   const [editRpe, setEditRpe] = useState("");
+  const [isEditingPending, setIsEditingPending] = useState(false);
 
   // Pre-filled rows state — always starts with 3 empty input rows
   const [rows, setRows] = useState(() =>
@@ -110,12 +119,17 @@ export function SetLogger({
     return () => clearInterval(timer);
   }, [undoCountdown, lastLoggedSetId]);
 
-  const handleUndo = () => {
+  const handleUndo = async () => {
     if (!lastLoggedSetId) return;
     const setId = lastLoggedSetId;
     setLastLoggedSetId(null);
     setUndoCountdown(0);
-    startTransition(() => deleteSet(setId));
+    try {
+      await deleteSet(setId);
+      onDeleteConfirmed?.(setId);
+    } catch {
+      toast.error("Nie udało się cofnąć serii");
+    }
   };
 
   const updateRow = (index: number, field: "weight" | "reps" | "rpe" | "warmup", value: string) => {
@@ -131,54 +145,66 @@ export function SetLogger({
 
     const weightNum = row.weight ? parseFloat(row.weight) : undefined;
 
-    startTransition(async () => {
-      // Add optimistic set
-      addOptimisticSet({
-        id: "optimistic-" + Date.now() + "-" + index,
-        workoutId,
-        exerciseId,
-        exercise: { id: exerciseId, name: exerciseName } as ExerciseLite,
-        setNumber: exerciseSets.length + 1,
-        weightKg: weightNum ?? null,
-        reps: repsNum,
-        rpe: row.rpe ? parseFloat(row.rpe) : null,
-        completedAt: new Date(),
-        isPR: false,
-        isWarmup: row.warmup,
-      } as SetWithExercise);
-
-      const result = await addSet({
-        workoutId,
-        exerciseId,
-        weightKg: weightNum,
-        reps: repsNum,
-        rpe: row.rpe ? parseFloat(row.rpe) : undefined,
-        isWarmup: row.warmup,
-      });
-
-      if (result.prs.length > 0) {
-        onSetAdded(result.prs, row.rpe ? parseFloat(row.rpe) : undefined);
-      } else {
-        onSetAdded([], row.rpe ? parseFloat(row.rpe) : undefined);
-      }
-      if (result.suggestion) {
-        setSuggestion(result.suggestion);
-      } else {
-        setSuggestion(null);
-      }
-
-      // Enable undo for the just-logged set
-      setLastLoggedSetId(result.set.id);
-      setUndoCountdown(5);
-    });
-
-    // Clear this row and shift others up, add fresh row at bottom
+    // Clear this row immediately (before await) so user can keep typing in next row
     setRows((prev) => {
       const next = prev.map((r, i) => {
         if (i === index) return emptyRow(i + 1);
         return r;
       });
       return next;
+    });
+
+    startTransition(async () => {
+      try {
+        // Add optimistic set
+        addOptimisticSet({
+          id: "optimistic-" + Date.now() + "-" + index,
+          workoutId,
+          exerciseId,
+          exercise: { id: exerciseId, name: exerciseName } as ExerciseLite,
+          setNumber: exerciseSets.length + 1,
+          weightKg: weightNum ?? null,
+          reps: repsNum,
+          rpe: row.rpe ? parseFloat(row.rpe) : null,
+          completedAt: new Date(),
+          isPR: false,
+          isWarmup: row.warmup,
+        } as SetWithExercise);
+
+        const result = await addSet({
+          workoutId,
+          exerciseId,
+          weightKg: weightNum,
+          reps: repsNum,
+          rpe: row.rpe ? parseFloat(row.rpe) : undefined,
+          isWarmup: row.warmup,
+        });
+
+        if ("error" in result) {
+          toast.error(result.error);
+          return;
+        }
+
+        // Notify parent about the confirmed set (sync allSets)
+        onSetConfirmed?.(result.set as unknown as SetWithExercise);
+
+        if (result.prs.length > 0) {
+          onSetAdded(result.prs, row.rpe ? parseFloat(row.rpe) : undefined);
+        } else {
+          onSetAdded([], row.rpe ? parseFloat(row.rpe) : undefined);
+        }
+        if (result.suggestion) {
+          setSuggestion(result.suggestion);
+        } else {
+          setSuggestion(null);
+        }
+
+        // Enable undo for the just-logged set
+        setLastLoggedSetId(result.set.id);
+        setUndoCountdown(5);
+      } catch {
+        toast.error("Nie udało się zapisać serii");
+      }
     });
   };
 
@@ -191,7 +217,18 @@ export function SetLogger({
 
   const handleDelete = (setId: string) => {
     if (setId.startsWith("optimistic")) return;
-    startTransition(() => deleteSet(setId));
+    startTransition(async () => {
+      try {
+        const result = await deleteSet(setId);
+        if (result && "error" in result) {
+          toast.error(result.error);
+        } else {
+          onDeleteConfirmed?.(setId);
+        }
+      } catch {
+        toast.error("Nie udało się usunąć serii");
+      }
+    });
   };
 
   const handleStartEdit = (set: SetWithExercise) => {
@@ -202,19 +239,34 @@ export function SetLogger({
     setEditRpe(set.rpe != null ? String(set.rpe) : "");
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingSetId) return;
     const repsNum = parseInt(editReps);
     if (!repsNum || repsNum < 1) return;
 
-    startTransition(() => {
-      updateSet(editingSetId, {
+    setIsEditingPending(true);
+    try {
+      const result = await updateSet(editingSetId, {
         weightKg: editWeight ? parseFloat(editWeight) : null,
         reps: repsNum,
         rpe: editRpe ? parseFloat(editRpe) : null,
       });
-    });
-    setEditingSetId(null);
+
+      if ("error" in result) {
+        toast.error(result.error as string);
+      } else {
+        onUpdateConfirmed?.(editingSetId, {
+          weightKg: editWeight ? parseFloat(editWeight) : null,
+          reps: repsNum,
+          rpe: editRpe ? parseFloat(editRpe) : null,
+        });
+      }
+    } catch {
+      toast.error("Nie udało się zapisać zmian");
+    } finally {
+      setEditingSetId(null);
+      setIsEditingPending(false);
+    }
   };
 
   return (
@@ -232,7 +284,7 @@ export function SetLogger({
       {/* Logged sets — read-only rows */}
       {exerciseSets.map((set) => {
         const isEditing = editingSetId === set.id;
-        const isWarmup = (set as unknown as { isWarmup?: boolean }).isWarmup;
+        const isWarmup = set.isWarmup;
         return (
           <div
             key={set.id}
@@ -284,7 +336,7 @@ export function SetLogger({
                   className="w-full rounded border border-amber-500/30 bg-card px-1 py-1 text-sm text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50"
                 />
                 <div className="flex items-center justify-center gap-0.5">
-                  <button onClick={handleSaveEdit} className="text-green-400 hover:text-green-300">
+                  <button onClick={handleSaveEdit} disabled={isEditingPending} className="text-green-400 hover:text-green-300 disabled:opacity-50">
                     <Check className="h-3.5 w-3.5" />
                   </button>
                 </div>

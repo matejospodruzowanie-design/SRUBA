@@ -1,11 +1,16 @@
 import { prisma } from "@/lib/db";
 import { NextRequest } from "next/server";
+import { getSession } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
+  const session = await getSession();
+  const userId = session?.id;
+
   const params = req.nextUrl.searchParams;
   const query = params.get("q");
   const muscle = params.get("muscle");
-  const limit = parseInt(params.get("limit") ?? "50");
+  const rawLimit = parseInt(params.get("limit") ?? "50");
+  const limit = isNaN(rawLimit) || rawLimit < 1 ? 50 : Math.min(rawLimit, 100);
   const recent = params.get("recent") === "true";
 
   const where: Record<string, unknown> = {};
@@ -16,14 +21,20 @@ export async function GET(req: NextRequest) {
     where.muscles = { some: { muscleGroup: muscle } };
   }
 
-  // "Recent" mode — find exercises ordered by most recently used in any workout
+  // "Recent" mode — find exercises ordered by most recently used by the current user
   if (recent) {
+    const recentWhere: Record<string, unknown> = { workout: { isActive: false } };
+    if (userId) {
+      recentWhere.workout = { ...(recentWhere.workout as Record<string, unknown>), userId };
+    }
+
     const recentSets = await prisma.workoutSet.findMany({
-      where: { workout: { isActive: false } },
+      where: recentWhere,
       select: { exerciseId: true },
       orderBy: { completedAt: "desc" },
       take: 100,
     });
+
     const seenIds = new Set<string>();
     const recentIds: string[] = [];
     for (const s of recentSets) {
@@ -34,8 +45,13 @@ export async function GET(req: NextRequest) {
       }
     }
     if (recentIds.length > 0) {
+      // Apply query/muscle filters on top of recent IDs
+      const exerciseWhere: Record<string, unknown> = { id: { in: recentIds } };
+      if (query) exerciseWhere.name = { contains: query };
+      if (muscle) exerciseWhere.muscles = { some: { muscleGroup: muscle } };
+
       const exercises = await prisma.exercise.findMany({
-        where: { id: { in: recentIds } },
+        where: exerciseWhere,
         select: {
           id: true,
           name: true,
@@ -43,7 +59,6 @@ export async function GET(req: NextRequest) {
           videoUrl: true,
           muscles: { select: { muscleGroup: true, isPrimary: true } },
         },
-        take: Math.min(limit, 100),
       });
       // Sort by recency order (preserve the order from recentIds)
       const orderMap = new Map(recentIds.map((id, i) => [id, i]));
@@ -61,7 +76,7 @@ export async function GET(req: NextRequest) {
       videoUrl: true,
       muscles: { select: { muscleGroup: true, isPrimary: true } },
     },
-    take: Math.min(limit, 100),
+    take: limit,
     orderBy: { name: "asc" },
   });
 

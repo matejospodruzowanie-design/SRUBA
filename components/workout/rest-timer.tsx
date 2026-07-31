@@ -11,90 +11,90 @@ interface RestTimerProps {
 }
 
 export function RestTimer({ defaultSeconds, onComplete, onSkip }: RestTimerProps) {
-  const [seconds, setSeconds] = useState(defaultSeconds);
-  const [isRunning, setIsRunning] = useState(true); // Auto-start like Strong/Hevy
+  const [targetTime, setTargetTime] = useState<number>(Date.now() + defaultSeconds * 1000);
+  const [remaining, setRemaining] = useState(defaultSeconds);
+  const [isRunning, setIsRunning] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const lastTickRef = useRef<number>(0);
 
+  // Reset target time when defaultSeconds changes
   useEffect(() => {
-    setSeconds(defaultSeconds);
+    setTargetTime(Date.now() + defaultSeconds * 1000);
+    setRemaining(defaultSeconds);
   }, [defaultSeconds]);
 
-  const playBeep = useCallback(() => {
+  const playBeep = useCallback((freq: number, duration: number, vol: number) => {
     if (!soundEnabled) return;
     try {
-      const ctx = audioCtxRef.current ?? new AudioContext();
+      const ctx = audioCtxRef.current ?? new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
       audioCtxRef.current = ctx;
+      if (ctx.state === "suspended") ctx.resume();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.frequency.value = 880;
-      gain.gain.value = 0.3;
+      osc.frequency.value = freq;
+      gain.gain.value = vol;
       osc.start();
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-      osc.stop(ctx.currentTime + 0.5);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+      osc.stop(ctx.currentTime + duration);
     } catch {
       // Web Audio not available
     }
   }, [soundEnabled]);
 
+  // Timestamp-based countdown — works correctly in background tabs
   useEffect(() => {
-    if (isRunning && seconds > 0) {
-      intervalRef.current = setInterval(() => {
-        setSeconds((prev) => Math.max(0, prev - 1));
-      }, 1000);
-    }
+    if (!isRunning) return;
+
+    const tick = () => {
+      const now = Date.now();
+      const diff = Math.max(0, Math.round((targetTime - now) / 1000));
+      setRemaining(diff);
+
+      // Tick sound at < 10s
+      if (diff <= 10 && diff > 0 && diff !== lastTickRef.current) {
+        lastTickRef.current = diff;
+        playBeep(660, 0.1, 0.08);
+      }
+
+      // Completion
+      if (diff <= 0) {
+        setIsRunning(false);
+        playBeep(880, 0.5, 0.3);
+        // Vibrate on mobile
+        try { navigator.vibrate?.(200); } catch { /* ignore */ }
+        onComplete?.();
+      }
+    };
+
+    tick(); // immediate check
+    intervalRef.current = setInterval(tick, 250); // check every 250ms for smooth ring
+
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isRunning]);
-
-  // Tick sound when < 10s
-  useEffect(() => {
-    if (!isRunning || seconds > 10 || seconds <= 0 || !soundEnabled) return;
-    try {
-      const ctx = audioCtxRef.current ?? new AudioContext();
-      audioCtxRef.current = ctx;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = 660;
-      gain.gain.value = 0.08;
-      osc.start();
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
-      osc.stop(ctx.currentTime + 0.1);
-    } catch {
-      // ignore
-    }
-  }, [seconds, isRunning, soundEnabled]);
-
-  // Fire side effects when timer hits 0 (pure effect, outside state updater)
-  useEffect(() => {
-    if (seconds === 0 && isRunning) {
-      setIsRunning(false);
-      playBeep();
-      onComplete?.();
-    }
-  }, [seconds, isRunning, playBeep, onComplete]);
+  }, [isRunning, targetTime, playBeep, onComplete]);
 
   const toggleTimer = () => setIsRunning(!isRunning);
   const skip = () => {
     setIsRunning(false);
-    setSeconds(defaultSeconds);
     onSkip?.();
   };
-  const addTime = (s: number) => setSeconds((prev) => prev + s);
+  const addTime = (s: number) => {
+    setTargetTime((prev) => prev + s * 1000);
+    setRemaining((prev) => prev + s);
+    if (!isRunning) setIsRunning(true);
+  };
 
-  const progress = defaultSeconds > 0
-    ? ((defaultSeconds - seconds) / defaultSeconds) * 100
-    : 0;
+  const totalSeconds = Math.max(remaining, defaultSeconds); // use larger of current or default for ring
+  const progress = totalSeconds > 0 ? ((totalSeconds - remaining) / totalSeconds) * 100 : 0;
 
   // Color transition: green (resting) → amber (almost done) → red (go!)
   const timerColor =
-    seconds <= 5 ? "text-red-400" : seconds <= 15 ? "text-amber-400" : "text-green-400";
+    remaining <= 5 ? "text-red-400" : remaining <= 15 ? "text-amber-400" : "text-green-400";
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 space-y-3">
@@ -123,16 +123,16 @@ export function RestTimer({ defaultSeconds, onComplete, onSkip }: RestTimerProps
           <circle
             cx="60" cy="60" r="54"
             fill="none"
-            stroke={seconds <= 5 ? "#f87171" : seconds <= 15 ? "#fbbf24" : "#4ade80"}
+            stroke={remaining <= 5 ? "#f87171" : remaining <= 15 ? "#fbbf24" : "#4ade80"}
             strokeWidth="4"
             strokeLinecap="round"
             strokeDasharray={`${2 * Math.PI * 54}`}
-            strokeDashoffset={`${2 * Math.PI * 54 * (1 - progress / 100)}`}
-            className="transition-all duration-1000 ease-linear"
+            strokeDashoffset={`${Math.max(0, 2 * Math.PI * 54 * (1 - Math.min(progress, 100) / 100))}`}
+            className="transition-all duration-300 ease-linear"
           />
         </svg>
         <span className={`text-4xl font-mono font-bold tracking-tight relative z-10 ${timerColor}`}>
-          {formatTime(seconds)}
+          {formatTime(Math.max(0, remaining))}
         </span>
       </div>
 
@@ -160,12 +160,16 @@ export function RestTimer({ defaultSeconds, onComplete, onSkip }: RestTimerProps
         </button>
       </div>
 
-      {/* Preset buttons */}
+      {/* Preset buttons — reset and start */}
       <div className="flex justify-center gap-2">
         {[60, 90, 120, 180].map((s) => (
           <button
             key={s}
-            onClick={() => { setSeconds(s); setIsRunning(false); }}
+            onClick={() => {
+              setTargetTime(Date.now() + s * 1000);
+              setRemaining(s);
+              setIsRunning(true);
+            }}
             className={`rounded-full px-3 py-1 text-xs transition-colors ${
               defaultSeconds === s
                 ? "bg-amber-500/20 text-amber-400"
@@ -178,7 +182,7 @@ export function RestTimer({ defaultSeconds, onComplete, onSkip }: RestTimerProps
       </div>
 
       {/* "Next set" prompt */}
-      {seconds === 0 && (
+      {remaining <= 0 && (
         <div className="text-center animate-pulse">
           <p className="text-sm font-semibold text-amber-400">
             Czas na kolejną serię!

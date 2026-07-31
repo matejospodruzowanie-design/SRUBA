@@ -29,6 +29,7 @@ interface SetWithExercise {
   rpe: number | null;
   completedAt: Date;
   isPR: boolean;
+  isWarmup?: boolean;
 }
 
 interface PlanExercise {
@@ -72,29 +73,40 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [workoutNotes, setWorkoutNotes] = useState("");
   const [elapsed, setElapsed] = useState(0);
+  const [isStarting, setIsStarting] = useState(false);
 
   // ─── Start workout ───
   const handleStart = useCallback(async (forceDiscard = false) => {
-    const name = workoutName.trim() || `Trening ${new Date().toLocaleDateString("pl-PL")}`;
-    const result = await startWorkout(name, workoutNotes || undefined, forceDiscard);
+    if (isStarting) return;
+    setIsStarting(true);
+    try {
+      const name = workoutName.trim() || `Trening ${new Date().toLocaleDateString("pl-PL")}`;
+      const result = await startWorkout(name, workoutNotes || undefined, forceDiscard);
 
-    if ("conflict" in result && result.conflict) {
-      const existing = result.existingWorkout;
-      if (confirm(`Masz aktywny trening "${existing.name}" z ${existing.setCount} seriami. Czy chcesz go porzucić i zacząć nowy?`)) {
-        const forced = await startWorkout(name, workoutNotes || undefined, true);
-        if ("id" in forced) {
-          setWorkoutId(forced.id);
-          setWorkoutName(forced.name);
+      if ("conflict" in result && result.conflict) {
+        const existing = result.existingWorkout;
+        if (confirm(`Masz aktywny trening "${existing.name}" z ${existing.setCount} seriami. Czy chcesz go usunąć i zacząć nowy?`)) {
+          const forced = await startWorkout(name, workoutNotes || undefined, true);
+          if ("id" in forced) {
+            setWorkoutId(forced.id);
+            setWorkoutName(forced.name);
+            setAllSets([]);
+            setExercises([]);
+          }
         }
+        return;
       }
-      return;
-    }
 
-    if ("id" in result) {
-      setWorkoutId(result.id);
-      setWorkoutName(result.name);
+      if ("id" in result) {
+        setWorkoutId(result.id);
+        setWorkoutName(result.name);
+      }
+    } catch {
+      toast.error("Nie udało się rozpocząć treningu");
+    } finally {
+      setIsStarting(false);
     }
-  }, [workoutName, workoutNotes]);
+  }, [workoutName, workoutNotes, isStarting]);
 
   // ─── Elapsed timer ───
   useEffect(() => {
@@ -118,13 +130,47 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
   };
 
   // ─── Remove exercise ───
-  const handleRemoveExercise = (exerciseId: string, exerciseName: string) => {
+  const handleRemoveExercise = async (exerciseId: string, exerciseName: string) => {
     if (!workoutId) return;
     if (!confirm(`Usunąć "${exerciseName}" z treningu? Wszystkie jego serie zostaną utracone.`)) return;
     setExercises((prev) => prev.filter((e) => e.id !== exerciseId));
     setAllSets((prev) => prev.filter((s) => s.exerciseId !== exerciseId));
-    removeExerciseFromWorkout(workoutId, exerciseId);
+    try {
+      await removeExerciseFromWorkout(workoutId, exerciseId);
+    } catch {
+      toast.error("Nie udało się usunąć ćwiczenia");
+    }
   };
+
+  // ─── Set confirmed (after server save) → update allSets ───
+  const handleSetConfirmed = useCallback((confirmedSet: SetWithExercise) => {
+    setAllSets((prev) => {
+      // Replace optimistic entry if exists, otherwise append
+      const hasOptimistic = prev.some((s) => s.id.startsWith("optimistic") && s.exerciseId === confirmedSet.exerciseId && s.id.includes(confirmedSet.setNumber.toString()));
+      if (hasOptimistic) {
+        return prev.map((s) =>
+          (s.id.startsWith("optimistic") && s.exerciseId === confirmedSet.exerciseId && s.id.includes(confirmedSet.setNumber.toString()))
+            ? confirmedSet
+            : s
+        );
+      }
+      return [...prev, confirmedSet];
+    });
+  }, []);
+
+  // ─── Set updated (after server save) → update allSets ───
+  const handleUpdateConfirmed = useCallback((setId: string, data: { weightKg?: number | null; reps?: number; rpe?: number | null }) => {
+    setAllSets((prev) =>
+      prev.map((s) =>
+        s.id === setId ? { ...s, ...data } : s
+      )
+    );
+  }, []);
+
+  // ─── Set deleted (after server delete) → update allSets ───
+  const handleDeleteConfirmed = useCallback((setId: string) => {
+    setAllSets((prev) => prev.filter((s) => s.id !== setId));
+  }, []);
 
   // ─── Set added → show rest timer ───
   const handleSetAdded = (exerciseId: string, exerciseName: string, equipment: string | null, prs: unknown[], setRpe?: number) => {
@@ -142,10 +188,17 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
 
   const handleSkipRest = () => setShowRestTimer(false);
   const handleFinish = () => setShowFinishModal(true);
-  const handleCloseFinish = () => {
+
+  // Called when the user confirms finish (finish successful)
+  const handleFinished = () => {
     setShowFinishModal(false);
     router.push("/history");
     router.refresh();
+  };
+
+  // Called when the user cancels (closes modal without finishing)
+  const handleCloseFinish = () => {
+    setShowFinishModal(false);
   };
 
   // ─── No workout yet ───
@@ -158,8 +211,9 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
         </div>
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium text-muted-foreground">Nazwa treningu</label>
+            <label htmlFor="workout-name" className="text-sm font-medium text-muted-foreground">Nazwa treningu</label>
             <input
+              id="workout-name"
               type="text" value={workoutName}
               onChange={(e) => setWorkoutName(e.target.value)}
               placeholder="np. Push Day, Nogi, Pull..."
@@ -176,14 +230,14 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
             ))}
           </div>
           <div>
-            <label className="text-xs text-muted-foreground">Notatki (opcjonalnie)</label>
-            <textarea value={workoutNotes} onChange={(e) => setWorkoutNotes(e.target.value)}
+            <label htmlFor="workout-notes" className="text-xs text-muted-foreground">Notatki (opcjonalnie)</label>
+            <textarea id="workout-notes" value={workoutNotes} onChange={(e) => setWorkoutNotes(e.target.value)}
               placeholder="np. Cel na dziś, samopoczucie..." rows={2}
               className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-none" />
           </div>
-          <button onClick={() => handleStart()}
-            className="w-full rounded-lg bg-amber-500 py-3 text-sm font-semibold text-black hover:bg-amber-400 transition-colors">
-            Rozpocznij trening
+          <button onClick={() => handleStart()} disabled={isStarting}
+            className="w-full rounded-lg bg-amber-500 py-3 text-sm font-semibold text-black hover:bg-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            {isStarting ? "Rozpoczynanie..." : "Rozpocznij trening"}
           </button>
         </div>
       </div>
@@ -284,10 +338,13 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
                     workoutId={workoutId}
                     exerciseId={exercise.id}
                     exerciseName={exercise.name}
-                    sets={allSets as unknown as Array<{ id: string; workoutId: string; exerciseId: string; exercise: { id: string; name: string; equipment: string | null; muscles: Array<{ muscleGroup: string; isPrimary: boolean }> }; setNumber: number; weightKg: number | null; reps: number; rpe: number | null; completedAt: Date; isPR: boolean }>}
+                    sets={allSets}
                     lastWeight={lastExercises.find((le) => le.exerciseId === exercise.id)?.weightKg ?? null}
                     lastReps={lastExercises.find((le) => le.exerciseId === exercise.id)?.reps ?? null}
-                    onSetAdded={(prs) => handleSetAdded(exercise.id, exercise.name, exercise.equipment, prs)}
+                    onSetAdded={(prs, setRpe) => handleSetAdded(exercise.id, exercise.name, exercise.equipment, prs, setRpe)}
+                    onSetConfirmed={handleSetConfirmed}
+                    onUpdateConfirmed={handleUpdateConfirmed}
+                    onDeleteConfirmed={handleDeleteConfirmed}
                   />
                 </div>
               </div>
@@ -324,6 +381,7 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
           workoutId={workoutId}
           setCount={allSets.filter((s) => !s.id.startsWith("optimistic")).length}
           onClose={handleCloseFinish}
+          onFinished={handleFinished}
         />
       )}
     </div>

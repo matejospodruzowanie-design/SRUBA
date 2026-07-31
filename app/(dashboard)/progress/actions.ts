@@ -148,32 +148,30 @@ export async function getTotalStats() {
     workout: { userId: user.id, isActive: false, endedAt: { not: null } },
   };
 
-  const [totalWorkouts, setAgg] = await Promise.all([
+  const [totalWorkouts, setAgg, allSets] = await Promise.all([
     prisma.workout.count({
       where: { userId: user.id, isActive: false, endedAt: { not: null } },
     }),
     prisma.workoutSet.aggregate({
-      where: { ...baseFilter, weightKg: { not: null } },
+      where: { ...baseFilter },
       _count: true,
+    }),
+    // Fetch all sets for volume calculation — typical fitness app scale is
+    // hundreds to low thousands of sets per user, well within safe limits
+    prisma.workoutSet.findMany({
+      where: { ...baseFilter, weightKg: { not: null } },
+      select: { weightKg: true, reps: true },
     }),
   ]);
 
-  // Use aggregation for volume instead of fetching all rows
-  const totalSets = await prisma.workoutSet.findMany({
-    where: { ...baseFilter, weightKg: { not: null } },
-    select: { weightKg: true, reps: true },
-    take: 5000, // safety cap for huge histories
-  });
-
-  const calculatedVolume = totalSets.reduce(
-    (sum, s) => sum + (s.weightKg ?? 0) * s.reps,
-    0
+  const totalVolumeKg = Math.round(
+    allSets.reduce((sum, s) => sum + (s.weightKg ?? 0) * s.reps, 0)
   );
 
   return {
     totalWorkouts,
     totalSets: setAgg._count,
-    totalVolumeKg: Math.round(calculatedVolume),
+    totalVolumeKg,
   };
 }
 
@@ -230,4 +228,5 @@ export async function deleteBodyMeasurement(id: string) {
 
   await prisma.bodyMeasurement.delete({ where: { id } });
   revalidatePath("/progress");
+  revalidatePath("/dashboard");
 }

@@ -32,7 +32,7 @@ export function SidebarNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex-1 space-y-1 px-3 py-4">
+    <nav className="flex-1 space-y-1 px-3 py-4" aria-label="Główna">
       {NAV_ITEMS.map((item) => {
         const isActive = pathname.startsWith(item.href);
         return (
@@ -40,6 +40,7 @@ export function SidebarNav() {
             key={item.href}
             href={item.href}
             prefetch={true}
+            aria-current={isActive ? "page" : undefined}
             className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
               isActive
                 ? "bg-amber-500/10 text-amber-400 font-medium"

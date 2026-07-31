@@ -16,7 +16,7 @@ export function levelFromXp(xp: number): number {
   while (xp >= xpForLevel(level)) {
     level++;
   }
-  return level - 1;
+  return Math.max(1, level - 1);
 }
 
 /** Calculate how much XP to reach next level */

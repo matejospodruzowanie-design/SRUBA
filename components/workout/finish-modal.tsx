@@ -2,14 +2,24 @@
 
 import { useState } from "react";
 import { finishWorkout as finishWorkoutAction } from "@/app/(dashboard)/workout/actions";
-import { useRouter } from "next/navigation";
 import { Trophy, Zap, Star, X } from "lucide-react";
 import { formatDuration } from "@/lib/fitness-utils";
+import { toast } from "sonner";
+
+const RANK_LABELS: Record<string, string> = {
+  bronze: "Brąz",
+  silver: "Srebro",
+  gold: "Złoto",
+  platinum: "Platyna",
+  diamond: "Diament",
+  global_elite: "Global Elite",
+};
 
 interface FinishModalProps {
   workoutId: string;
   setCount: number;
-  onClose: () => void;
+  onClose: () => void;       // dismiss without finishing (backdrop click, "Jeszcze nie")
+  onFinished: () => void;    // called after successful finish (navigate to /history)
 }
 
 interface FinishResult {
@@ -27,22 +37,22 @@ interface FinishResult {
   newAchievements: string[];
 }
 
-export function FinishModal({ workoutId, setCount, onClose }: FinishModalProps) {
+export function FinishModal({ workoutId, setCount, onClose, onFinished }: FinishModalProps) {
   const [result, setResult] = useState<FinishResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   const handleFinish = async () => {
     setLoading(true);
     try {
       const res = await finishWorkoutAction(workoutId);
       if (res && "error" in res) {
+        toast.error(res.error as string);
         onClose();
-        router.push("/workout");
         return;
       }
       setResult(res as FinishResult);
     } catch {
+      toast.error("Nie udało się zakończyć treningu");
       onClose();
     } finally {
       setLoading(false);
@@ -89,7 +99,7 @@ export function FinishModal({ workoutId, setCount, onClose }: FinishModalProps) 
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60" />
       <div className="relative w-full max-w-sm bg-card border border-border rounded-2xl p-6 space-y-5 max-h-[85vh] overflow-y-auto">
-        <button onClick={onClose} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
+        <button onClick={onFinished} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
           <X className="h-5 w-5" />
         </button>
 
@@ -146,7 +156,7 @@ export function FinishModal({ workoutId, setCount, onClose }: FinishModalProps) 
             <div className="text-center py-2 rounded-lg bg-purple-500/20 animate-pulse">
               <Trophy className="h-5 w-5 text-purple-400 mx-auto mb-1" />
               <p className="text-sm font-bold text-purple-400">
-                Nowa ranga: {xpResult.newRank}!
+                Nowa ranga: {RANK_LABELS[xpResult.newRank] || xpResult.newRank}!
               </p>
             </div>
           )}
@@ -165,11 +175,7 @@ export function FinishModal({ workoutId, setCount, onClose }: FinishModalProps) 
         )}
 
         <button
-          onClick={() => {
-            onClose();
-            router.push("/history");
-            router.refresh();
-          }}
+          onClick={onFinished}
           className="w-full rounded-lg bg-amber-500 py-3 text-sm font-semibold text-black hover:bg-amber-400 transition-colors"
         >
           Przejdź do historii

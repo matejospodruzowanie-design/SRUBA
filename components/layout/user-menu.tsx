@@ -2,6 +2,7 @@
 
 import { LogOut, Zap, Flame } from "lucide-react";
 import { logout } from "@/app/(auth)/logout/actions";
+import { RANK_LABELS, RANK_COLORS } from "@/lib/constants";
 
 interface UserMenuProps {
   user: {
@@ -14,24 +15,6 @@ interface UserMenuProps {
     image: string | null;
   };
 }
-
-const RANK_LABELS: Record<string, string> = {
-  bronze: "Brąz",
-  silver: "Srebro",
-  gold: "Złoto",
-  platinum: "Platyna",
-  diamond: "Diament",
-  global_elite: "Global Elite",
-};
-
-const RANK_COLORS: Record<string, string> = {
-  bronze: "#cd7f32",
-  silver: "#c0c0c0",
-  gold: "#ffd700",
-  platinum: "#08a0e9",
-  diamond: "#b9f2ff",
-  global_elite: "#ff4500",
-};
 
 const XP_FOR_NEXT_LEVEL = (level: number) => 100 * level * (level + 1) / 2;
 

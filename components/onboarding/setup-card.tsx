@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Ruler, Weight, ChevronRight, Check } from "lucide-react";
 import { updateProfile } from "@/app/(dashboard)/profile/actions";
+import { toast } from "sonner";
 
 interface Props {
   className?: string;
@@ -22,13 +23,18 @@ export function SetupCard({ className }: Props) {
     if (!h || !w) return;
 
     setSaving(true);
-    await updateProfile({
-      heightCm: h,
-      weightKg: w,
-    });
-    setSaving(false);
-    setDone(true);
-    router.refresh();
+    try {
+      await updateProfile({
+        heightCm: h,
+        weightKg: w,
+      });
+      setDone(true);
+      router.refresh();
+    } catch {
+      toast.error("Nie udało się zapisać");
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (done) {

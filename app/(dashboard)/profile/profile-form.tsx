@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CATEGORIES, GOALS, EXPERIENCE_LEVELS } from "@/lib/constants";
 import { updateProfile } from "./actions";
+import { toast } from "sonner";
 
 interface Props {
   user: {
@@ -28,18 +29,22 @@ export function UpdateProfileForm({ user }: Props) {
     const heightStr = form.get("heightCm") as string;
     const weightStr = form.get("weightKg") as string;
 
-    await updateProfile({
-      category: form.get("category") as string,
-      goal: form.get("goal") as string,
-      experience: form.get("experience") as string,
-      heightCm: heightStr ? parseFloat(heightStr) : null,
-      weightKg: weightStr ? parseFloat(weightStr) : null,
-    });
-
-    setSaving(false);
-    setSaved(true);
-    router.refresh();
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      await updateProfile({
+        category: form.get("category") as string,
+        goal: form.get("goal") as string,
+        experience: form.get("experience") as string,
+        heightCm: heightStr ? parseFloat(heightStr) : null,
+        weightKg: weightStr ? parseFloat(weightStr) : null,
+      });
+      setSaved(true);
+      router.refresh();
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      toast.error("Nie udało się zapisać");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

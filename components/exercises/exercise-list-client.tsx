@@ -33,9 +33,18 @@ export function ExerciseListClient({ exercises }: Props) {
     if (!confirm("Na pewno usunąć to ćwiczenie?")) return;
     setDeletedIds((prev) => new Set(prev).add(id));
     startTransition(async () => {
-      const result = await deleteCustomExercise(id);
-      if (result?.error) {
-        toast.error(result.error);
+      try {
+        const result = await deleteCustomExercise(id);
+        if (result?.error) {
+          toast.error(result.error);
+          setDeletedIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+        }
+      } catch {
+        toast.error("Nie udało się usunąć ćwiczenia");
         setDeletedIds((prev) => {
           const next = new Set(prev);
           next.delete(id);
@@ -112,7 +121,7 @@ export function ExerciseListClient({ exercises }: Props) {
                     handleDelete(ex.id);
                   }}
                   disabled={isPending}
-                  className="absolute top-2 right-2 p-1.5 rounded-lg text-muted-foreground/30 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
+                  className="absolute top-2 right-2 p-1.5 rounded-lg text-muted-foreground/30 hover:text-red-400 hover:bg-red-500/10 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                   title="Usuń ćwiczenie"
                 >
                   <Trash2 className="h-3.5 w-3.5" />

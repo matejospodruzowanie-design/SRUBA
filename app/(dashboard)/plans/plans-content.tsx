@@ -70,8 +70,12 @@ export function PlansContent({ initialRoutines }: Props) {
   const handleDelete = useCallback(
     async (id: string) => {
       if (!confirm("Na pewno usunąć ten plan?")) return;
-      await deleteRoutine(id);
-      setRoutines((prev) => prev.filter((r) => r.id !== id));
+      try {
+        await deleteRoutine(id);
+        setRoutines((prev) => prev.filter((r) => r.id !== id));
+      } catch {
+        toast.error("Nie udało się usunąć planu");
+      }
     },
     []
   );
@@ -125,6 +129,7 @@ export function PlansContent({ initialRoutines }: Props) {
             ].map((tpl) => (
               <button
                 key={tpl.name}
+                disabled={creating}
                 onClick={async () => {
                   try {
                     const routine = await createRoutine({

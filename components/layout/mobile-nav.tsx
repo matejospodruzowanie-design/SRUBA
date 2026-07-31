@@ -6,7 +6,7 @@ import {
   LayoutDashboard,
   Dumbbell,
   Library,
-  BarChart3,
+  Calendar,
   User,
 } from "lucide-react";
 
@@ -14,7 +14,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/workout", label: "Trening", icon: Dumbbell },
   { href: "/exercises", label: "Ćwiczenia", icon: Library },
-  { href: "/history", label: "Historia", icon: BarChart3 },
+  { href: "/plans", label: "Plany", icon: Calendar },
   { href: "/profile", label: "Profil", icon: User },
 ];
 

@@ -16,7 +16,8 @@ export default async function HistoryPage({
   const user = await getUser();
   const params = await searchParams;
   const cursor = typeof params.cursor === "string" ? params.cursor : undefined;
-  const page = typeof params.page === "string" ? parseInt(params.page) : 1;
+  const rawPage = typeof params.page === "string" ? parseInt(params.page) : 1;
+  const page = isNaN(rawPage) || rawPage < 1 ? 1 : rawPage;
 
   const workouts = await prisma.workout.findMany({
     where: { userId: user.id, isActive: false, endedAt: { not: null } },
@@ -32,6 +33,11 @@ export default async function HistoryPage({
 
   const hasMore = workouts.length > PAGE_SIZE;
   if (hasMore) workouts.pop();
+
+  // Check if user has any workouts at all (for proper empty state)
+  const totalCount = workouts.length > 0 ? workouts.length : await prisma.workout.count({
+    where: { userId: user.id, isActive: false, endedAt: { not: null } },
+  });
 
   // Group by ISO week
   const weekGroups = new Map<string, typeof workouts>();
@@ -53,7 +59,7 @@ export default async function HistoryPage({
         </p>
       </div>
 
-      {workouts.length === 0 ? (
+      {workouts.length === 0 && totalCount === 0 ? (
         <div className="rounded-xl border border-dashed border-border p-12 text-center">
           <Dumbbell className="h-12 w-12 text-muted-foreground/40 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-muted-foreground">Brak treningów</h3>
@@ -63,6 +69,13 @@ export default async function HistoryPage({
             className="inline-flex items-center gap-1 mt-4 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-black hover:bg-amber-400 transition-colors"
           >
             <Dumbbell className="h-4 w-4" /> Rozpocznij trening
+          </Link>
+        </div>
+      ) : workouts.length === 0 ? (
+        <div className="text-center py-12">
+          <p className="text-muted-foreground">Brak treningów na tej stronie.</p>
+          <Link href="/history?page=1" className="text-sm text-amber-400 hover:text-amber-300 mt-2 inline-block">
+            ← Wróć do pierwszej strony
           </Link>
         </div>
       ) : (

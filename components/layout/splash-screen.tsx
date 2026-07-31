@@ -9,17 +9,24 @@ import { useState, useEffect } from "react";
 const SPLASH_KEY = "sruba-splash-shown";
 
 export function SplashScreen() {
-  const [visible, setVisible] = useState(true);
+  // Start hidden to avoid flash on repeat visits — only show if this is the first visit
+  const [visible, setVisible] = useState(false);
   const [fadeOut, setFadeOut] = useState(false);
   // Generate random particle positions only on client to avoid hydration mismatch
   const [particles, setParticles] = useState<Array<{ left: string; top: string; delay: string; duration: string }>>([]);
 
   useEffect(() => {
-    if (sessionStorage.getItem(SPLASH_KEY)) {
-      setVisible(false);
+    if (typeof window === "undefined") return;
+    // Skip animation for users who prefer reduced motion
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      sessionStorage.setItem(SPLASH_KEY, "1");
       return;
     }
+    if (sessionStorage.getItem(SPLASH_KEY)) {
+      return; // already shown — stay hidden
+    }
     sessionStorage.setItem(SPLASH_KEY, "1");
+    setVisible(true); // first visit — show splash
 
     // Generate particles client-side only
     setParticles(

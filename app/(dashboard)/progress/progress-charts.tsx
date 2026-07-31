@@ -390,7 +390,7 @@ export function ProgressCharts({
           )}
 
           {/* Weight chart */}
-          {bodyMeasurements.filter((m) => m.weightKg != null).length >= 2 && (
+          {visibleMeasurements.filter((m) => m.weightKg != null).length >= 2 && (
             <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
               <h3 className="text-sm font-semibold mb-4">
                 ⚖️ Waga ciała
@@ -398,7 +398,7 @@ export function ProgressCharts({
               <div className="h-48 sm:h-56">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
-                    data={bodyMeasurements
+                    data={visibleMeasurements
                       .filter((m) => m.weightKg != null)
                       .reverse()
                       .map((m) => ({
@@ -444,7 +444,7 @@ export function ProgressCharts({
           )}
 
           {/* Body fat % chart */}
-          {bodyMeasurements.filter((m) => m.bodyFatPct != null).length >= 2 && (
+          {visibleMeasurements.filter((m) => m.bodyFatPct != null).length >= 2 && (
             <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
               <h3 className="text-sm font-semibold mb-4">
                 📉 Body fat %
@@ -452,7 +452,7 @@ export function ProgressCharts({
               <div className="h-48 sm:h-56">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
-                    data={bodyMeasurements
+                    data={visibleMeasurements
                       .filter((m) => m.bodyFatPct != null)
                       .reverse()
                       .map((m) => ({
@@ -498,7 +498,7 @@ export function ProgressCharts({
           )}
 
           {/* Circumference trends */}
-          {bodyMeasurements.filter((m) => m.chestCm != null || m.waistCm != null || m.armsCm != null).length >= 2 && (
+          {visibleMeasurements.filter((m) => m.chestCm != null || m.waistCm != null || m.armsCm != null).length >= 2 && (
             <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
               <h3 className="text-sm font-semibold mb-4">
                 📏 Obwody (cm)
@@ -506,7 +506,7 @@ export function ProgressCharts({
               <div className="h-48 sm:h-56">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
-                    data={bodyMeasurements
+                    data={visibleMeasurements
                       .filter((m) => m.chestCm != null || m.waistCm != null || m.armsCm != null)
                       .reverse()
                       .map((m) => ({

@@ -20,13 +20,17 @@ export function CustomExerciseModal({ open, onClose }: Props) {
     const formData = new FormData(form);
 
     startTransition(async () => {
-      const result = await createCustomExercise(formData);
-      if (result?.error) {
-        toast.error(result.error);
-      } else {
-        toast.success("Ćwiczenie dodane!");
-        form.reset();
-        onClose();
+      try {
+        const result = await createCustomExercise(formData);
+        if (result?.error) {
+          toast.error(result.error);
+        } else {
+          toast.success("Ćwiczenie dodane!");
+          form.reset();
+          onClose();
+        }
+      } catch {
+        toast.error("Nie udało się dodać ćwiczenia");
       }
     });
   };

@@ -61,7 +61,7 @@ export async function createRoutine(data: { name: string; description?: string; 
 
 export async function updateRoutine(
   id: string,
-  data: { name?: string; description?: string }
+  data: { name?: string; description?: string | null }
 ) {
   const user = await getUser();
   const routine = await prisma.routine.findFirst({
@@ -69,9 +69,16 @@ export async function updateRoutine(
   });
   if (!routine) throw new Error("Nie znaleziono planu");
 
+  // Explicitly set description to null when empty/undefined to allow clearing
+  const updateData: Record<string, unknown> = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if ("description" in data) {
+    updateData.description = data.description?.trim() || null;
+  }
+
   const updated = await prisma.routine.update({
     where: { id },
-    data,
+    data: updateData,
   });
   revalidatePath("/plans");
   revalidatePath(`/plans/${id}`);
@@ -130,6 +137,7 @@ export async function addExerciseToRoutine(
   });
 
   revalidatePath(`/plans/${routineId}`);
+  revalidatePath("/plans");
   return slot;
 }
 
@@ -172,6 +180,7 @@ export async function removeRoutineExercise(id: string, routineId: string) {
 
   await prisma.routineExercise.delete({ where: { id } });
   revalidatePath(`/plans/${routineId}`);
+  revalidatePath("/plans");
 }
 
 // ─── Reorder exercises ───
@@ -214,4 +223,5 @@ export async function reorderRoutineExercises(
   );
 
   revalidatePath(`/plans/${routineId}`);
+  revalidatePath("/plans");
 }

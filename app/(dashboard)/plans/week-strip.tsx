@@ -22,9 +22,7 @@ export function WeekStrip() {
           return (
             <div
               key={i}
-              className={`flex flex-col items-center gap-1 min-w-[36px] ${
-                dayIsToday ? "" : ""
-              }`}
+              className="flex flex-col items-center gap-1 min-w-[36px]"
             >
               <span className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">
                 {DAY_NAMES[i]}

@@ -6,6 +6,7 @@ import { getUser } from "@/lib/session";
 import { checkSetPrs } from "@/lib/prs";
 import { applyXp, checkAchievements, updateStreak } from "@/lib/gamification";
 import { workoutDuration, nextWeightSuggestion } from "@/lib/fitness-utils";
+import { z } from "zod";
 
 // ─── Active workout check ───
 
@@ -43,11 +44,12 @@ export async function startWorkout(name: string, notes?: string, forceDiscard = 
     }
   }
 
-  // Cancel any existing active workout — also set endedAt so stats exclude it
-  await prisma.workout.updateMany({
-    where: { userId: user.id, isActive: true },
-    data: { isActive: false, endedAt: new Date() },
-  });
+  // Delete any existing active workout (its sets cascade via schema)
+  if (forceDiscard) {
+    await prisma.workout.deleteMany({
+      where: { userId: user.id, isActive: true },
+    });
+  }
 
   const workout = await prisma.workout.create({
     data: {
@@ -64,6 +66,16 @@ export async function startWorkout(name: string, notes?: string, forceDiscard = 
 
 // ─── Add set ───
 
+const addSetSchema = z.object({
+  workoutId: z.string().min(1),
+  exerciseId: z.string().min(1),
+  weightKg: z.number().positive().optional(),
+  reps: z.number().int().min(1).max(999),
+  rpe: z.number().min(0).max(10).optional(),
+  targetReps: z.string().optional(),
+  isWarmup: z.boolean().optional(),
+});
+
 export interface AddSetInput {
   workoutId: string;
   exerciseId: string;
@@ -77,10 +89,16 @@ export interface AddSetInput {
 export async function addSet(input: AddSetInput) {
   const user = await getUser();
 
+  // Validate input
+  const parsed = addSetSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: "Nieprawidłowe dane serii" };
+  }
+
   const workout = await prisma.workout.findFirst({
     where: { id: input.workoutId, userId: user.id, isActive: true },
   });
-  if (!workout) throw new Error("Brak aktywnego treningu");
+  if (!workout) return { error: "Brak aktywnego treningu" };
 
   // Get the next set number for this exercise
   const lastSet = await prisma.workoutSet.findFirst({
@@ -155,10 +173,16 @@ export async function addSet(input: AddSetInput) {
     : null;
 
   revalidatePath("/workout");
-  return { set: workoutSet, prs, suggestion };
+  return { set: { ...workoutSet, isPR: prs.length > 0 }, prs, suggestion };
 }
 
 // ─── Update set ───
+
+const updateSetSchema = z.object({
+  weightKg: z.number().positive().nullable().optional(),
+  reps: z.number().int().min(1).max(999).optional(),
+  rpe: z.number().min(0).max(10).nullable().optional(),
+});
 
 export async function updateSet(
   setId: string,
@@ -166,19 +190,43 @@ export async function updateSet(
 ) {
   const user = await getUser();
 
+  const parsed = updateSetSchema.safeParse(data);
+  if (!parsed.success) {
+    return { error: "Nieprawidłowe dane serii" };
+  }
+
   const existing = await prisma.workoutSet.findFirst({
     where: { id: setId, workout: { userId: user.id, isActive: true } },
-    include: { workout: true },
+    include: { workout: true, exercise: true },
   });
-  if (!existing) throw new Error("Nie znaleziono serii");
+  if (!existing) return { error: "Nie znaleziono serii" };
 
   const updated = await prisma.workoutSet.update({
     where: { id: setId },
-    data,
+    data: parsed.data,
   });
 
+  // Recompute PRs for the updated set
+  const prs = await checkSetPrs(
+    user.id,
+    existing.exerciseId,
+    existing.exercise.name,
+    updated.weightKg,
+    updated.reps,
+    existing.workout.id
+  );
+
+  const isPR = prs.length > 0;
+
+  if (isPR !== existing.isPR) {
+    await prisma.workoutSet.update({
+      where: { id: setId },
+      data: { isPR },
+    });
+  }
+
   revalidatePath("/workout");
-  return updated;
+  return { ...updated, isPR };
 }
 
 // ─── Delete set ───
@@ -188,10 +236,11 @@ export async function deleteSet(setId: string) {
   const existing = await prisma.workoutSet.findFirst({
     where: { id: setId, workout: { userId: user.id, isActive: true } },
   });
-  if (!existing) throw new Error("Nie znaleziono serii");
+  if (!existing) return { error: "Nie znaleziono serii" };
 
   await prisma.workoutSet.delete({ where: { id: setId } });
   revalidatePath("/workout");
+  return { ok: true };
 }
 
 // ─── Start workout from plan ───
@@ -209,7 +258,7 @@ export async function startWorkoutFromPlan(planId: string, forceDiscard = false)
     },
   });
 
-  if (!routine) throw new Error("Nie znaleziono planu");
+  if (!routine) return { error: "Nie znaleziono planu" };
 
   // Check for existing active workout with sets
   if (!forceDiscard) {
@@ -225,11 +274,12 @@ export async function startWorkoutFromPlan(planId: string, forceDiscard = false)
     }
   }
 
-  // Cancel any existing active workout — also set endedAt so stats exclude it
-  await prisma.workout.updateMany({
-    where: { userId: user.id, isActive: true },
-    data: { isActive: false, endedAt: new Date() },
-  });
+  // Delete any existing active workout (its sets cascade via schema)
+  if (forceDiscard) {
+    await prisma.workout.deleteMany({
+      where: { userId: user.id, isActive: true },
+    });
+  }
 
   const workout = await prisma.workout.create({
     data: {
@@ -279,7 +329,7 @@ export async function deleteWorkout(workoutId: string) {
   const workout = await prisma.workout.findFirst({
     where: { id: workoutId, userId: user.id },
   });
-  if (!workout) throw new Error("Nie znaleziono treningu");
+  if (!workout) return { error: "Nie znaleziono treningu" };
 
   await prisma.workout.delete({ where: { id: workoutId } });
 
@@ -287,6 +337,7 @@ export async function deleteWorkout(workoutId: string) {
   revalidatePath("/dashboard");
   revalidatePath("/progress");
   revalidatePath("/workout");
+  return { ok: true };
 }
 
 // ─── Remove all sets for an exercise ───
@@ -296,13 +347,14 @@ export async function removeExerciseFromWorkout(workoutId: string, exerciseId: s
   const workout = await prisma.workout.findFirst({
     where: { id: workoutId, userId: user.id, isActive: true },
   });
-  if (!workout) throw new Error("Brak aktywnego treningu");
+  if (!workout) return { error: "Brak aktywnego treningu" };
 
   await prisma.workoutSet.deleteMany({
     where: { workoutId, exerciseId },
   });
 
   revalidatePath("/workout");
+  return { ok: true };
 }
 
 // ─── Finish workout ───
@@ -314,7 +366,7 @@ export async function finishWorkout(workoutId: string) {
     where: { id: workoutId, userId: user.id, isActive: true },
     include: { sets: true },
   });
-  if (!workout) throw new Error("Brak aktywnego treningu");
+  if (!workout) return { error: "Trening już zakończony lub nie istnieje" };
 
   // Guard: don't finish empty workouts — delete them instead
   const realSets = workout.sets.filter((s) => s.id && !s.id.startsWith("optimistic"));
@@ -325,16 +377,24 @@ export async function finishWorkout(workoutId: string) {
     return { error: "Trening bez serii został usunięty" };
   }
 
+  // Atomically mark workout as inactive to prevent double-finish
+  const updated = await prisma.workout.updateMany({
+    where: { id: workoutId, isActive: true },
+    data: { isActive: false },
+  });
+  if (updated.count === 0) {
+    return { error: "Trening już zakończony" };
+  }
+
   const endedAt = new Date();
 
   // Count unique PRs from this workout
   const prCount = workout.sets.filter((s) => s.isPR).length;
 
-  // Update workout
+  // Update endedAt and duration
   await prisma.workout.update({
     where: { id: workoutId },
     data: {
-      isActive: false,
       endedAt,
       durationSeconds: workoutDuration(workout.startedAt, endedAt),
     },

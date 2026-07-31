@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Plus, X, Weight, Ruler } from "lucide-react";
 import { addBodyMeasurement } from "@/app/(dashboard)/progress/actions";
 import { format } from "date-fns";
+import { toast } from "sonner";
 
 interface Props {
   currentWeight: number | null;
@@ -28,20 +29,24 @@ export function MeasurementForm({ currentWeight }: Props) {
     e.preventDefault();
     setSaving(true);
 
-    await addBodyMeasurement({
-      weightKg: weight ? parseFloat(weight) : null,
-      bodyFatPct: bodyFat ? parseFloat(bodyFat) : null,
-      chestCm: chest ? parseFloat(chest) : null,
-      waistCm: waist ? parseFloat(waist) : null,
-      hipsCm: hips ? parseFloat(hips) : null,
-      armsCm: arms ? parseFloat(arms) : null,
-      thighsCm: thighs ? parseFloat(thighs) : null,
-      date,
-    });
-
-    setSaving(false);
-    setOpen(false);
-    router.refresh();
+    try {
+      await addBodyMeasurement({
+        weightKg: weight ? parseFloat(weight) : null,
+        bodyFatPct: bodyFat ? parseFloat(bodyFat) : null,
+        chestCm: chest ? parseFloat(chest) : null,
+        waistCm: waist ? parseFloat(waist) : null,
+        hipsCm: hips ? parseFloat(hips) : null,
+        armsCm: arms ? parseFloat(arms) : null,
+        thighsCm: thighs ? parseFloat(thighs) : null,
+        date,
+      });
+      setOpen(false);
+      router.refresh();
+    } catch {
+      toast.error("Nie udało się zapisać pomiaru");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -202,7 +207,7 @@ export function MeasurementForm({ currentWeight }: Props) {
               {/* Submit */}
               <button
                 type="submit"
-                disabled={saving || (!weight && !bodyFat && !chest && !waist)}
+                disabled={saving || (!weight && !bodyFat && !chest && !waist && !hips && !arms && !thighs)}
                 className="w-full rounded-lg bg-amber-500 py-2.5 text-sm font-semibold text-black hover:bg-amber-400 disabled:opacity-40 transition-colors"
               >
                 {saving ? "Zapisywanie..." : "Zapisz pomiar"}

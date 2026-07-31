@@ -51,3 +51,13 @@ export const RANKS = [
   { id: "diamond", label: "Diament", color: "#b9f2ff", minScore: 2000 },
   { id: "global_elite", label: "Global Elite", color: "#ff4500", minScore: 3500 },
 ] as const;
+
+/** Rank id → Polish label mapping, derived from RANKS */
+export const RANK_LABELS: Record<string, string> = Object.fromEntries(
+  RANKS.map((r) => [r.id, r.label])
+);
+
+/** Rank id → color mapping, derived from RANKS */
+export const RANK_COLORS: Record<string, string> = Object.fromEntries(
+  RANKS.map((r) => [r.id, r.color])
+);
