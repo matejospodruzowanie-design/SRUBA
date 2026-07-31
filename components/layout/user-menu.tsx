@@ -1,7 +1,7 @@
 "use client";
 
-import { signOut } from "next-auth/react";
 import { LogOut, Zap, Flame } from "lucide-react";
+import { logout } from "@/app/(auth)/logout/actions";
 
 interface UserMenuProps {
   user: {
@@ -91,7 +91,7 @@ export function UserMenu({ user }: UserMenuProps) {
       </div>
 
       <button
-        onClick={() => signOut({ callbackUrl: "/login" })}
+        onClick={() => logout()}
         className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
       >
         <LogOut className="h-3.5 w-3.5" />

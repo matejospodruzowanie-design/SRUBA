@@ -1,8 +1,10 @@
 "use server";
 
-import { signIn } from "@/auth";
-import { AuthError } from "next-auth";
 import { z } from "zod";
+import { prisma } from "@/lib/db";
+import bcrypt from "bcryptjs";
+import { setSessionCookie } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
 const LoginSchema = z.object({
   email: z.string().email("Podaj poprawny email"),
@@ -28,19 +30,25 @@ export async function login(state: LoginState, formData: FormData) {
     };
   }
 
-  try {
-    await signIn("credentials", {
-      email: validated.data.email.toLowerCase(),
-      password: validated.data.password,
-      redirectTo: "/dashboard",
-    });
-  } catch (error) {
-    if (error instanceof AuthError) {
-      if (error.type === "CredentialsSignin") {
-        return { message: "Nieprawidłowy email lub hasło" };
-      }
-      return { message: "Wystąpił błąd. Spróbuj ponownie." };
-    }
-    throw error;
+  const user = await prisma.user.findUnique({
+    where: { email: validated.data.email.toLowerCase() },
+  });
+
+  if (!user?.passwordHash) {
+    return { message: "Nieprawidłowy email lub hasło" };
   }
+
+  const valid = await bcrypt.compare(validated.data.password, user.passwordHash);
+  if (!valid) {
+    return { message: "Nieprawidłowy email lub hasło" };
+  }
+
+  await setSessionCookie({
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    image: user.image,
+  });
+
+  redirect("/dashboard");
 }

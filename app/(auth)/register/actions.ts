@@ -3,7 +3,8 @@
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { signIn } from "@/auth";
+import { setSessionCookie } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
 const RegisterSchema = z.object({
   name: z.string().min(1, "Imię jest wymagane").trim(),
@@ -44,7 +45,7 @@ export async function register(state: RegisterState, formData: FormData) {
 
   const passwordHash = await bcrypt.hash(password, 10);
 
-  await prisma.user.create({
+  const user = await prisma.user.create({
     data: {
       name,
       email: email.toLowerCase(),
@@ -52,9 +53,12 @@ export async function register(state: RegisterState, formData: FormData) {
     },
   });
 
-  await signIn("credentials", {
-    email: email.toLowerCase(),
-    password,
-    redirectTo: "/dashboard",
+  await setSessionCookie({
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    image: user.image,
   });
+
+  redirect("/dashboard");
 }

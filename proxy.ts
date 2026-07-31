@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { verifyToken } from "@/lib/auth";
 
 const protectedRoutes = ["/dashboard", "/workout", "/plans", "/history", "/progress", "/recovery", "/challenges", "/coach", "/profile", "/measurements", "/exercises", "/app"];
 const publicRoutes = ["/login", "/register"];
@@ -10,17 +10,19 @@ export default async function proxy(req: NextRequest) {
   const isPublicRoute = publicRoutes.some((r) => path.startsWith(r));
   const isRoot = path === "/";
 
-  const session = await auth();
+  // Read session cookie
+  const token = req.cookies.get("sruba-token")?.value;
+  const session = token ? await verifyToken(token) : null;
 
-  if (isProtectedRoute && !session?.user) {
+  if (isProtectedRoute && !session) {
     return NextResponse.redirect(new URL("/login", req.nextUrl));
   }
 
-  if ((isPublicRoute || isRoot) && session?.user) {
+  if ((isPublicRoute || isRoot) && session) {
     return NextResponse.redirect(new URL("/dashboard", req.nextUrl));
   }
 
-  if (isRoot && !session?.user) {
+  if (isRoot && !session) {
     return NextResponse.redirect(new URL("/login", req.nextUrl));
   }
 
