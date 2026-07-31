@@ -57,6 +57,71 @@ export async function createRoutine(data: { name: string; description?: string; 
   return routine;
 }
 
+// ─── Create routine from template (with exercise lookup) ───
+
+export async function createRoutineFromTemplate(data: {
+  name: string;
+  description?: string;
+  exerciseNames: string[];
+}) {
+  const user = await getUser();
+
+  // Create the routine
+  const routine = await prisma.routine.create({
+    data: {
+      userId: user.id,
+      name: data.name,
+      description: data.description ?? null,
+      source: "template",
+    },
+  });
+
+  // Look up exercises by name and create RoutineExercise slots
+  const foundExercises = await prisma.exercise.findMany({
+    where: {
+      name: { in: data.exerciseNames },
+    },
+    select: { id: true, name: true },
+  });
+
+  // Maintain template order — only include exercises that exist in DB
+  const ordered = data.exerciseNames
+    .map((name, i) => {
+      const ex = foundExercises.find(
+        (e) => e.name.toLowerCase() === name.toLowerCase()
+      );
+      return ex ? { exerciseId: ex.id, position: i } : null;
+    })
+    .filter(Boolean) as { exerciseId: string; position: number }[];
+
+  if (ordered.length > 0) {
+    await prisma.routineExercise.createMany({
+      data: ordered.map(({ exerciseId, position }) => ({
+        routineId: routine.id,
+        exerciseId,
+        position,
+        targetSets: 3,
+        targetReps: "8-12",
+        restSeconds: 90,
+      })),
+    });
+  }
+
+  revalidatePath("/plans");
+  revalidatePath(`/plans/${routine.id}`);
+
+  // Return the full routine with exercises
+  return prisma.routine.findFirst({
+    where: { id: routine.id },
+    include: {
+      exercises: {
+        include: { exercise: { include: { muscles: true } } },
+        orderBy: { position: "asc" },
+      },
+    },
+  });
+}
+
 // ─── Update routine ───
 
 export async function updateRoutine(
@@ -198,7 +263,7 @@ export async function reorderRoutineExercises(
   // Verify all slot IDs belong to this routine
   const existingSlots = await prisma.routineExercise.findMany({
     where: { routineId },
-    select: { id: true },
+    select: { id: true, position: true },
   });
   const existingIds = new Set(existingSlots.map((s) => s.id));
 
@@ -212,7 +277,18 @@ export async function reorderRoutineExercises(
     }
   }
 
-  // Use a transaction to avoid partial updates on failure
+  // Two-phase position update to avoid unique-constraint collisions on SQLite.
+  // Phase 1: shift all positions into a temporary range (current + 10000)
+  // Phase 2: set final positions
+  const OFFSET = 10000;
+  await prisma.$transaction([
+    ...existingSlots.map((s) =>
+      prisma.routineExercise.update({
+        where: { id: s.id },
+        data: { position: s.position + OFFSET },
+      })
+    ),
+  ]);
   await prisma.$transaction(
     orderedIds.map((id, i) =>
       prisma.routineExercise.update({

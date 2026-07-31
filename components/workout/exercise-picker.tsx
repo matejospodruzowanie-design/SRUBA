@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Search, X, Clock } from "lucide-react";
 import { MUSCLE_GROUPS } from "@/lib/constants";
 import { getExerciseImage } from "@/lib/exercise-images";
+import { toast } from "sonner";
 
 interface Exercise {
   id: string;
@@ -27,8 +28,14 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
   const [recentExercises, setRecentExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(false);
   const [recentLoading, setRecentLoading] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const search = useCallback(async () => {
+    // Cancel previous in-flight request to avoid stale responses
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -36,14 +43,24 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
       if (muscle) params.set("muscle", muscle);
       params.set("limit", "50");
 
-      const res = await fetch(`/api/exercises/search?${params}`);
+      const res = await fetch(`/api/exercises/search?${params}`, {
+        signal: controller.signal,
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      setExercises(Array.isArray(data) ? data : []);
-    } catch {
-      setExercises([]);
+      if (!controller.signal.aborted) {
+        setExercises(Array.isArray(data) ? data : []);
+      }
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      toast.error("Nie udało się wyszukać ćwiczeń");
+      if (!controller.signal.aborted) {
+        setExercises([]);
+      }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [query, muscle]);
 
@@ -56,7 +73,9 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
       .then((data) => {
         if (Array.isArray(data)) setRecentExercises(data);
       })
-      .catch(() => {})
+      .catch(() => {
+        toast.error("Nie udało się pobrać ostatnich ćwiczeń");
+      })
       .finally(() => setRecentLoading(false));
   }, [open]);
 
@@ -77,6 +96,10 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
   if (!open) return null;
 
   const showRecent = !query && !muscle && recentExercises.length > 0;
+  const recentIds = new Set(recentExercises.map((e) => e.id));
+  const dedupedExercises = showRecent
+    ? exercises.filter((e) => !recentIds.has(e.id))
+    : exercises;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -175,13 +198,18 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
               ))}
             </div>
           ) : showRecent ? (
-            /* Show all exercises below recent when no filter — grid */
+            /* Show all exercises below recent when no filter — deduped */
             <div>
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
                 Wszystkie ćwiczenia
               </p>
-              <div className="space-y-1">
-                {exercises.map((ex) => {
+              {dedupedExercises.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  Wszystkie ćwiczenia są już w ostatnio używanych
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {dedupedExercises.map((ex) => {
                   const alreadyInWorkout = workoutExerciseIds.includes(ex.id);
                   const image = getExerciseImage(ex.videoUrl, ex.muscles.find((m) => m.isPrimary)?.muscleGroup);
                   return (
@@ -219,6 +247,7 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
                   );
                 })}
               </div>
+            )}
             </div>
           ) : exercises.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">

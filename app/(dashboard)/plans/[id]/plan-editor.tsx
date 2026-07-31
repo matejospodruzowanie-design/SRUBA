@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useTransition } from "react";
+import { useState, useCallback, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -231,19 +231,50 @@ export function PlanEditor({ routine }: Props) {
     [routine.id]
   );
 
-  // ─── Update exercise config ───
+  // ─── Update exercise config (debounced server call with rollback) ───
+
+  const debounceTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Track last known-good server state for rollback
+  const lastGoodState = useRef<Map<string, { targetSets: number; targetReps: string; restSeconds: number }>>(new Map());
 
   const handleUpdateSlot = useCallback(
     (slotId: string, data: { targetSets?: number; targetReps?: string; restSeconds?: number }) => {
-      // Optimistic update
-      setExercises((prev) =>
-        prev.map((s) => (s.id === slotId ? { ...s, ...data } : s))
-      );
-      startTransition(() => {
-        updateRoutineExercise(slotId, data).catch(() => {
-          toast.error("Nie udało się zapisać ćwiczenia");
-        });
+      // Snapshot previous state before optimistic update (for rollback)
+      setExercises((prev) => {
+        const slot = prev.find((s) => s.id === slotId);
+        if (slot && !lastGoodState.current.has(slotId)) {
+          lastGoodState.current.set(slotId, {
+            targetSets: slot.targetSets,
+            targetReps: slot.targetReps,
+            restSeconds: slot.restSeconds,
+          });
+        }
+        return prev.map((s) => (s.id === slotId ? { ...s, ...data } : s));
       });
+
+      // Debounce the server action — 500ms after last keystroke
+      const existing = debounceTimers.current.get(slotId);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        debounceTimers.current.delete(slotId);
+        updateRoutineExercise(slotId, data)
+          .then(() => {
+            // Server confirmed — this state is now "good"
+            lastGoodState.current.delete(slotId);
+          })
+          .catch(() => {
+            toast.error("Nie udało się zapisać ćwiczenia");
+            // Rollback to last known-good state
+            const saved = lastGoodState.current.get(slotId);
+            if (saved) {
+              setExercises((prev) =>
+                prev.map((s) => (s.id === slotId ? { ...s, ...saved } : s))
+              );
+              lastGoodState.current.delete(slotId);
+            }
+          });
+      }, 500);
+      debounceTimers.current.set(slotId, timer);
     },
     []
   );

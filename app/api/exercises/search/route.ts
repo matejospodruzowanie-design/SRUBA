@@ -13,9 +13,17 @@ export async function GET(req: NextRequest) {
   const limit = isNaN(rawLimit) || rawLimit < 1 ? 50 : Math.min(rawLimit, 100);
   const recent = params.get("recent") === "true";
 
-  const where: Record<string, unknown> = {};
+  // Privacy: unauthenticated users see only built-in exercises.
+  // Authenticated users see built-in + their own custom exercises.
+  const visibilityFilter: Record<string, unknown> = userId
+    ? { OR: [{ isCustom: false }, { userId }] }
+    : { isCustom: false };
+
+  const where: Record<string, unknown> = {
+    AND: [visibilityFilter],
+  };
   if (query) {
-    where.name = { contains: query };
+    where.name = { contains: query, mode: "insensitive" as const };
   }
   if (muscle) {
     where.muscles = { some: { muscleGroup: muscle } };
@@ -45,9 +53,12 @@ export async function GET(req: NextRequest) {
       }
     }
     if (recentIds.length > 0) {
-      // Apply query/muscle filters on top of recent IDs
-      const exerciseWhere: Record<string, unknown> = { id: { in: recentIds } };
-      if (query) exerciseWhere.name = { contains: query };
+      // Apply query/muscle filters + visibility on top of recent IDs
+      const exerciseWhere: Record<string, unknown> = {
+        id: { in: recentIds },
+        AND: [visibilityFilter],
+      };
+      if (query) exerciseWhere.name = { contains: query, mode: "insensitive" as const };
       if (muscle) exerciseWhere.muscles = { some: { muscleGroup: muscle } };
 
       const exercises = await prisma.exercise.findMany({

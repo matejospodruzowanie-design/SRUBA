@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getUser } from "@/lib/session";
 import { notFound } from "next/navigation";
 import { EQUIPMENT, MUSCLE_GROUPS } from "@/lib/constants";
 import { ArrowLeft, Play, Info, Dumbbell, TrendingUp } from "lucide-react";
@@ -10,6 +11,7 @@ export default async function ExerciseDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const user = await getUser();
   const { id } = await params;
 
   const exercise = await prisma.exercise.findUnique({
@@ -17,7 +19,8 @@ export default async function ExerciseDetailPage({
     include: { muscles: true },
   });
 
-  if (!exercise) {
+  // Only show built-in exercises or user's own custom exercises
+  if (!exercise || (exercise.isCustom && exercise.userId !== user.id)) {
     notFound();
   }
 
@@ -73,21 +76,34 @@ export default async function ExerciseDetailPage({
         </Link>
       </div>
 
-      {/* Video embed */}
-      {exercise.videoUrl && (
-        <div className="rounded-xl overflow-hidden border border-border">
-          <div className="aspect-video">
-            <iframe
-              src={exercise.videoUrl
-                .replace(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11}).*/, "https://youtube.com/embed/$1")
-                .replace("watch?v=", "embed/")}
-              allow="accelerometer; autoplay; encrypted-media; gyroscope"
-              allowFullScreen
-              className="w-full h-full"
-            />
+      {/* Video embed — only for validated YouTube URLs */}
+      {exercise.videoUrl && (() => {
+        let videoId: string | null = null;
+        try {
+          const url = new URL(exercise.videoUrl);
+          if (url.hostname.includes("youtube.com") || url.hostname === "youtu.be") {
+            videoId = url.searchParams.get("v")
+              || url.pathname.split("/embed/")[1]
+              || url.pathname.split("/shorts/")[1]
+              || (url.hostname === "youtu.be" ? url.pathname.slice(1) : null);
+          }
+        } catch { /* invalid URL — skip embed */ }
+        if (!videoId) return null;
+        return (
+          <div className="rounded-xl overflow-hidden border border-border">
+            <div className="aspect-video">
+              <iframe
+                src={`https://youtube.com/embed/${videoId}`}
+                allow="accelerometer; autoplay; encrypted-media; gyroscope"
+                allowFullScreen
+                className="w-full h-full"
+                referrerPolicy="strict-origin-when-cross-origin"
+                sandbox="allow-scripts allow-same-origin allow-presentation"
+              />
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Muscles section */}
       <div className="rounded-xl border border-border bg-card p-6 space-y-3">

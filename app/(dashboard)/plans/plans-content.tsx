@@ -12,7 +12,7 @@ import {
   ChevronRight,
   X,
 } from "lucide-react";
-import { createRoutine, deleteRoutine } from "./actions";
+import { createRoutine, createRoutineFromTemplate, deleteRoutine } from "./actions";
 import { WeekStrip } from "./week-strip";
 import { toast } from "sonner";
 
@@ -131,16 +131,20 @@ export function PlansContent({ initialRoutines }: Props) {
                 key={tpl.name}
                 disabled={creating}
                 onClick={async () => {
+                  setCreating(true);
                   try {
-                    const routine = await createRoutine({
+                    const routine = await createRoutineFromTemplate({
                       name: tpl.name,
                       description: tpl.desc,
-                      source: "template",
+                      exerciseNames: tpl.exercises,
                     });
+                    if (!routine) throw new Error("Nie udało się utworzyć planu");
                     setRoutines((prev) => [...prev, routine]);
                     router.push(`/plans/${routine.id}`);
                   } catch {
                     toast.error("Nie udało się utworzyć planu");
+                  } finally {
+                    setCreating(false);
                   }
                 }}
                 className="rounded-xl border border-border bg-card hover:border-amber-500/20 transition-all p-4 text-left group"

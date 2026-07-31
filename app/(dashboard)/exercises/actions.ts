@@ -52,7 +52,17 @@ export async function deleteCustomExercise(exerciseId: string) {
     return { error: "Nie znaleziono ćwiczenia" };
   }
 
-  await prisma.exercise.delete({ where: { id: exerciseId } });
+  try {
+    await prisma.exercise.delete({ where: { id: exerciseId } });
+  } catch (err: unknown) {
+    // Prisma P2003 / SQLITE_CONSTRAINT: exercise is referenced by sets, plans, or PRs
+    const message =
+      err && typeof err === "object" && "code" in err
+        ? "Nie można usunąć — ćwiczenie jest używane w treningach lub planach"
+        : "Nie udało się usunąć ćwiczenia";
+    return { error: message };
+  }
+
   revalidatePath("/exercises");
   return { success: true };
 }
