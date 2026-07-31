@@ -74,7 +74,19 @@ export default async function WorkoutPage({ searchParams }: Props) {
   const { planId } = await searchParams;
   if (planId) {
     try {
-      const { workout, planExercises } = await startWorkoutFromPlan(planId);
+      const result = await startWorkoutFromPlan(planId);
+
+      if ("conflict" in result && result.conflict) {
+        return (
+          <ActiveWorkout
+            initialWorkout={null}
+            initialExercises={[]}
+            lastExercises={[]}
+          />
+        );
+      }
+
+      const { workout, planExercises } = result as { workout: { id: string; name: string; startedAt: Date }; planExercises: Array<{ id: string; name: string; equipment: string | null; muscles: Array<{ muscleGroup: string; isPrimary: boolean }>; targetSets?: number; targetReps?: string; restSeconds?: number }> };
 
       // Fetch last sets for autofill
       const lastExercises = await Promise.all(

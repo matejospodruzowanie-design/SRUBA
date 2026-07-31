@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useOptimistic, useTransition } from "react";
-import { Trash2, Flame, TrendingUp, Pencil, Check, X, Plus, Undo2 } from "lucide-react";
+import { useState, useEffect, useRef, useOptimistic, useTransition } from "react";
+import { Trash2, Flame, TrendingUp, Pencil, Check, X, Plus, Undo2, Calculator, Thermometer } from "lucide-react";
 import { addSet, deleteSet, updateSet } from "@/app/(dashboard)/workout/actions";
+import { plateCalculator } from "@/lib/fitness-utils";
 
 interface ExerciseLite {
   id: string;
@@ -31,7 +32,7 @@ interface Props {
   sets: SetWithExercise[];
   lastWeight: number | null;
   lastReps: number | null;
-  onSetAdded: (prs: unknown[]) => void;
+  onSetAdded: (prs: unknown[], setRpe?: number) => void;
 }
 
 const DEFAULT_ROWS = 3;
@@ -42,6 +43,7 @@ function emptyRow(index: number) {
     weight: "",
     reps: "",
     rpe: "",
+    warmup: false,
   };
 }
 
@@ -58,6 +60,7 @@ export function SetLogger({
   const [suggestion, setSuggestion] = useState<{ weight: number; reason: string } | null>(null);
   const [lastLoggedSetId, setLastLoggedSetId] = useState<string | null>(null);
   const [undoCountdown, setUndoCountdown] = useState(0);
+  const [plateCalcIndex, setPlateCalcIndex] = useState<number | null>(null);
 
   // Inline edit state (for editing already-logged sets)
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
@@ -70,6 +73,9 @@ export function SetLogger({
     Array.from({ length: DEFAULT_ROWS }, (_, i) => emptyRow(i + 1))
   );
 
+  // Refs for auto-focus after logging
+  const weightRefs = useRef<(HTMLInputElement | null)[]>([]);
+
   const [optimisticSets, addOptimisticSet] = useOptimistic(
     sets,
     (state: SetWithExercise[], newSet: SetWithExercise) => [...state, newSet]
@@ -77,6 +83,17 @@ export function SetLogger({
 
   const exerciseSets = optimisticSets.filter((s) => s.exerciseId === exerciseId);
   const actualSetCount = exerciseSets.filter((s) => !s.id.startsWith("optimistic")).length;
+
+  // Auto-focus first empty weight field after logging
+  useEffect(() => {
+    if (isPending || undoCountdown > 0) return;
+    for (let i = 0; i < rows.length; i++) {
+      if (!rows[i].weight && weightRefs.current[i]) {
+        weightRefs.current[i]?.focus();
+        break;
+      }
+    }
+  }, [actualSetCount, isPending, undoCountdown, rows.length]);
 
   // Undo countdown
   useEffect(() => {
@@ -101,9 +118,9 @@ export function SetLogger({
     startTransition(() => deleteSet(setId));
   };
 
-  const updateRow = (index: number, field: "weight" | "reps" | "rpe", value: string) => {
+  const updateRow = (index: number, field: "weight" | "reps" | "rpe" | "warmup", value: string) => {
     setRows((prev) =>
-      prev.map((r, i) => (i === index ? { ...r, [field]: value } : r))
+      prev.map((r, i) => (i === index ? { ...r, [field]: field === "warmup" ? !r.warmup : value } : r))
     );
   };
 
@@ -127,6 +144,7 @@ export function SetLogger({
         rpe: row.rpe ? parseFloat(row.rpe) : null,
         completedAt: new Date(),
         isPR: false,
+        isWarmup: row.warmup,
       } as SetWithExercise);
 
       const result = await addSet({
@@ -135,10 +153,13 @@ export function SetLogger({
         weightKg: weightNum,
         reps: repsNum,
         rpe: row.rpe ? parseFloat(row.rpe) : undefined,
+        isWarmup: row.warmup,
       });
 
       if (result.prs.length > 0) {
-        onSetAdded(result.prs);
+        onSetAdded(result.prs, row.rpe ? parseFloat(row.rpe) : undefined);
+      } else {
+        onSetAdded([], row.rpe ? parseFloat(row.rpe) : undefined);
       }
       if (result.suggestion) {
         setSuggestion(result.suggestion);
@@ -199,8 +220,9 @@ export function SetLogger({
   return (
     <div className="space-y-2">
       {/* Table header */}
-      <div className="grid grid-cols-[36px_1fr_1fr_44px_32px] gap-1.5 text-[10px] text-muted-foreground uppercase tracking-wider px-1">
+      <div className="grid grid-cols-[24px_24px_1fr_1fr_44px_32px] gap-1 text-[10px] text-muted-foreground uppercase tracking-wider px-1">
         <span className="text-center">#</span>
+        <span />
         <span className="text-center">kg</span>
         <span className="text-center">Powt.</span>
         <span className="text-center">RPE</span>
@@ -210,19 +232,26 @@ export function SetLogger({
       {/* Logged sets — read-only rows */}
       {exerciseSets.map((set) => {
         const isEditing = editingSetId === set.id;
+        const isWarmup = (set as unknown as { isWarmup?: boolean }).isWarmup;
         return (
           <div
             key={set.id}
-            className={`grid grid-cols-[36px_1fr_1fr_44px_32px] gap-1.5 items-center rounded-md px-2 py-1.5 text-sm ${
+            className={`grid grid-cols-[24px_24px_1fr_1fr_44px_32px] gap-1 items-center rounded-md px-1.5 py-1.5 text-sm ${
               set.isPR
                 ? "bg-amber-500/10 border border-amber-500/20"
+                : isWarmup
+                ? "bg-orange-500/5 border border-orange-500/10"
                 : "bg-zinc-900/30"
             } ${isEditing ? "ring-1 ring-amber-500/50" : ""}`}
           >
             {/* Set number */}
-            <span className="text-center text-xs text-muted-foreground font-medium tabular-nums">
+            <span className={`text-center text-xs font-medium tabular-nums ${isWarmup ? "text-orange-400/60" : "text-muted-foreground"}`}>
               {set.isPR ? <Flame className="h-3 w-3 text-amber-400 inline mr-0.5" /> : null}
               {set.setNumber}
+            </span>
+            {/* Warmup indicator */}
+            <span className="text-center">
+              {isWarmup && <Thermometer className="h-3 w-3 text-orange-400/60 inline" />}
             </span>
 
             {isEditing ? (
@@ -302,21 +331,46 @@ export function SetLogger({
       {rows.map((row, index) => (
         <div
           key={row.key}
-          className="grid grid-cols-[36px_1fr_1fr_44px_32px] gap-1.5 items-center rounded-md px-2 py-1"
+          className="grid grid-cols-[28px_28px_1fr_1fr_44px_32px] gap-1 items-center rounded-md px-1.5 py-1"
         >
-          <span className="text-center text-xs text-muted-foreground tabular-nums">
+          <span className="text-center text-[11px] text-muted-foreground tabular-nums">
             {actualSetCount + index + 1}
           </span>
-          <input
-            type="number"
-            value={row.weight}
-            onChange={(e) => updateRow(index, "weight", e.target.value)}
-            onKeyDown={handleKeyDown(index)}
-            placeholder={(lastWeight && index === 0) ? String(lastWeight) : "kg"}
-            step="2.5"
-            inputMode="decimal"
-            className="w-full rounded border border-border bg-transparent px-2 py-2 text-sm text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50 placeholder:text-muted-foreground/40"
-          />
+          {/* Warmup toggle */}
+          <button
+            onClick={() => updateRow(index, "warmup", row.warmup ? "" : "1")}
+            className={`flex items-center justify-center h-7 w-7 rounded-md transition-colors ${
+              row.warmup
+                ? "bg-orange-500/10 text-orange-400"
+                : "text-muted-foreground/20 hover:text-muted-foreground/60"
+            }`}
+            title={row.warmup ? "Seria rozgrzewkowa" : "Oznacz jako rozgrzewkową"}
+          >
+            <Thermometer className="h-3.5 w-3.5" />
+          </button>
+          <div className="relative">
+            <input
+              type="number"
+              ref={(el) => { weightRefs.current[index] = el; }}
+              value={row.weight}
+              onChange={(e) => updateRow(index, "weight", e.target.value)}
+              onKeyDown={handleKeyDown(index)}
+              placeholder={(lastWeight && index === 0) ? String(lastWeight) : "kg"}
+              step="2.5"
+              inputMode="decimal"
+              className="w-full rounded border border-border bg-transparent px-2 py-2 text-sm text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50 placeholder:text-muted-foreground/40"
+            />
+            {row.weight && !isNaN(parseFloat(row.weight)) && parseFloat(row.weight) > 20 && (() => {
+              const plates = plateCalculator(parseFloat(row.weight));
+              return (
+                <div className="absolute left-0 right-0 -bottom-4 text-[9px] text-muted-foreground/50 text-center truncate">
+                  {plates.perSide.length > 0 ? plates.perSide.map((p, pi) => (
+                    <span key={pi}>{p}{pi < plates.perSide.length - 1 ? "+" : ""}</span>
+                  )) : <span>sztanga</span>}
+                </div>
+              );
+            })()}
+          </div>
           <input
             type="number"
             value={row.reps}

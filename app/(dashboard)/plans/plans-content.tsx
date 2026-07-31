@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { createRoutine, deleteRoutine } from "./actions";
 import { WeekStrip } from "./week-strip";
+import { toast } from "sonner";
 
 interface RoutineExercise {
   id: string;
@@ -60,7 +61,7 @@ export function PlansContent({ initialRoutines }: Props) {
       setShowCreate(false);
       router.push(`/plans/${routine.id}`);
     } catch {
-      // silently fail
+      toast.error("Nie udało się utworzyć planu");
     } finally {
       setCreating(false);
     }
@@ -68,6 +69,7 @@ export function PlansContent({ initialRoutines }: Props) {
 
   const handleDelete = useCallback(
     async (id: string) => {
+      if (!confirm("Na pewno usunąć ten plan?")) return;
       await deleteRoutine(id);
       setRoutines((prev) => prev.filter((r) => r.id !== id));
     },
@@ -96,6 +98,67 @@ export function PlansContent({ initialRoutines }: Props) {
 
       {/* Week strip */}
       <WeekStrip />
+
+      {/* Templates — quick-start plans */}
+      {routines.length === 0 && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+            Gotowe szablony
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {[
+              {
+                name: "Push/Pull/Legs",
+                desc: "Klasyczny split 3-dniowy. Push (klatka+barki+triceps), Pull (plecy+biceps), Legs (nogi).",
+                exercises: ["Wyciskanie sztangi", "Wiosłowanie", "Przysiad", "Wyciskanie hantli", "Podciąganie", "Martwy ciąg"],
+              },
+              {
+                name: "Full Body 3x",
+                desc: "Trening całego ciała 3 razy w tygodniu. Idealny dla początkujących.",
+                exercises: ["Przysiad", "Martwy ciąg", "Wiosłowanie", "Wyciskanie sztangi", "Plank"],
+              },
+              {
+                name: "Upper/Lower",
+                desc: "Split 4-dniowy: góra/dół. Większa objętość dla średniozaawansowanych.",
+                exercises: ["Wyciskanie sztangi", "Podciąganie", "Uginanie ramion", "Przysiad", "Wspięcia na palce"],
+              },
+            ].map((tpl) => (
+              <button
+                key={tpl.name}
+                onClick={async () => {
+                  try {
+                    const routine = await createRoutine({
+                      name: tpl.name,
+                      description: tpl.desc,
+                      source: "template",
+                    });
+                    setRoutines((prev) => [...prev, routine]);
+                    router.push(`/plans/${routine.id}`);
+                  } catch {
+                    toast.error("Nie udało się utworzyć planu");
+                  }
+                }}
+                className="rounded-xl border border-border bg-card hover:border-amber-500/20 transition-all p-4 text-left group"
+              >
+                <h3 className="font-semibold text-sm group-hover:text-amber-400 transition-colors">
+                  {tpl.name}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{tpl.desc}</p>
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {tpl.exercises.slice(0, 4).map((ex) => (
+                    <span key={ex} className="inline-block rounded-md bg-zinc-800/60 px-2 py-0.5 text-[10px] text-zinc-400">
+                      {ex}
+                    </span>
+                  ))}
+                  {tpl.exercises.length > 4 && (
+                    <span className="text-[10px] text-zinc-500">+{tpl.exercises.length - 4}</span>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Plans grid */}
       {routines.length === 0 ? (

@@ -49,7 +49,27 @@ export function RestTimer({ defaultSeconds, onComplete, onSkip }: RestTimerProps
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isRunning]); // Only re-run when isRunning changes
+  }, [isRunning]);
+
+  // Tick sound when < 10s
+  useEffect(() => {
+    if (!isRunning || seconds > 10 || seconds <= 0 || !soundEnabled) return;
+    try {
+      const ctx = audioCtxRef.current ?? new AudioContext();
+      audioCtxRef.current = ctx;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 660;
+      gain.gain.value = 0.08;
+      osc.start();
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+      osc.stop(ctx.currentTime + 0.1);
+    } catch {
+      // ignore
+    }
+  }, [seconds, isRunning, soundEnabled]);
 
   // Fire side effects when timer hits 0 (pure effect, outside state updater)
   useEffect(() => {

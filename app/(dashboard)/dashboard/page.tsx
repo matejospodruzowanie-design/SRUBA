@@ -6,9 +6,11 @@ import { Dumbbell, TrendingUp, Target, Flame, Zap, ChevronRight, Clock, BarChart
 import { SetupCard } from "@/components/onboarding/setup-card";
 import { RecoverySection } from "@/components/recovery/recovery-section";
 import { SkeletonCard } from "@/components/ui/skeleton";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, startOfDay, subDays, isSameDay, isToday, format } from "date-fns";
 import { pl } from "date-fns/locale";
 import { formatDuration } from "@/lib/fitness-utils";
+import { CATEGORIES, GOALS, RANKS } from "@/lib/constants";
+import { levelFromXp, xpToNextLevel } from "@/lib/gamification";
 
 const RANK_LABELS: Record<string, string> = {
   bronze: "Brąz",
@@ -45,6 +47,18 @@ export default async function DashboardPage() {
   const lastVolume = lastWorkout?.sets.reduce((sum, s) => sum + (s.weightKg ?? 0) * s.reps, 0) ?? 0;
   const lastPRs = lastWorkout?.sets.filter((s) => s.isPR).length ?? 0;
 
+  // Week strip — last 7 days workout summary
+  const today = startOfDay(new Date());
+  const weekDays = Array.from({ length: 7 }, (_, i) => subDays(today, 6 - i));
+  const weekWorkouts = await prisma.workout.findMany({
+    where: {
+      userId: user.id,
+      isActive: false,
+      endedAt: { gte: subDays(today, 6), not: null },
+    },
+    select: { endedAt: true },
+  });
+
   return (
     <div className="space-y-5 sm:space-y-8 stagger-children">
       {/* Header */}
@@ -54,8 +68,31 @@ export default async function DashboardPage() {
             Cześć, {user.name?.split(" ")[0] || "wojowniku"}!
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Gotowy na dzisiejszy trening?
+            {GOALS.find((g) => g.id === user.goal)?.label
+              ? `Cel: ${GOALS.find((g) => g.id === user.goal)?.label} · ${CATEGORIES.find((c) => c.id === user.category)?.icon} ${CATEGORIES.find((c) => c.id === user.category)?.label}`
+              : "Gotowy na dzisiejszy trening?"}
           </p>
+          {/* Rank progress bar */}
+          {(() => {
+            const xpNext = xpToNextLevel(user.xp);
+            const currentLevel = levelFromXp(user.xp);
+            const xpIntoLevel = xpNext > 0 ? Math.round((1 - xpNext / (xpToNextLevel(user.xp - 1) + xpNext)) * 100) : 100;
+            const nextRank = RANKS.filter((r) => r.minScore > 0).find((r) => user.xp < r.minScore);
+            return (
+              <div className="mt-2 space-y-0.5 max-w-[200px]">
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>Poziom {currentLevel}</span>
+                  {nextRank && <span className="text-amber-400/70">→ {nextRank.label}</span>}
+                </div>
+                <div className="h-1 rounded-full bg-border overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-amber-500 transition-all"
+                    style={{ width: `${xpIntoLevel}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })()}
         </div>
         {/* Mini rank badge */}
         <div
@@ -101,6 +138,33 @@ export default async function DashboardPage() {
           <span className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">XP</span>
           <p className="text-sm sm:text-base font-bold text-amber-400">{user.xp}</p>
         </div>
+      </div>
+
+      {/* Week strip — 7-day mini calendar like Lyfta */}
+      <div className="flex gap-1.5 justify-between">
+        {weekDays.map((day) => {
+          const hasWorkout = weekWorkouts.some((w) => w.endedAt && isSameDay(new Date(w.endedAt), day));
+          const dayIsToday = isToday(day);
+          const dayNames = ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"];
+          const dayIndex = day.getDay();
+          const dayLabel = dayNames[dayIndex === 0 ? 6 : dayIndex - 1]; // Convert Sun=0 to Mon=0
+          return (
+            <div key={day.toISOString()} className="flex flex-col items-center gap-1 flex-1">
+              <span className="text-[10px] text-muted-foreground">{dayLabel}</span>
+              <div
+                className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                  hasWorkout
+                    ? "bg-amber-500 text-black"
+                    : dayIsToday
+                    ? "border-2 border-amber-500/50 text-amber-400"
+                    : "bg-zinc-900 text-muted-foreground/40"
+                }`}
+              >
+                {format(day, "d")}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Quick action — Start workout (prominent on mobile) */}

@@ -1,13 +1,22 @@
 import { prisma } from "@/lib/db";
 import { getUser } from "@/lib/session";
 import Link from "next/link";
-import { format, startOfWeek, formatDistanceToNow } from "date-fns";
+import { format, startOfWeek } from "date-fns";
 import { pl } from "date-fns/locale";
-import { Dumbbell, Flame, Clock, ChevronRight, BarChart3 } from "lucide-react";
+import { Dumbbell, Flame, Clock, ChevronRight } from "lucide-react";
 import { formatDuration } from "@/lib/fitness-utils";
 
-export default async function HistoryPage() {
+const PAGE_SIZE = 20;
+
+export default async function HistoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const user = await getUser();
+  const params = await searchParams;
+  const cursor = typeof params.cursor === "string" ? params.cursor : undefined;
+  const page = typeof params.page === "string" ? parseInt(params.page) : 1;
 
   const workouts = await prisma.workout.findMany({
     where: { userId: user.id, isActive: false, endedAt: { not: null } },
@@ -17,8 +26,12 @@ export default async function HistoryPage() {
       },
     },
     orderBy: { startedAt: "desc" },
-    take: 50,
+    take: PAGE_SIZE + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : { skip: (page - 1) * PAGE_SIZE }),
   });
+
+  const hasMore = workouts.length > PAGE_SIZE;
+  if (hasMore) workouts.pop();
 
   // Group by ISO week
   const weekGroups = new Map<string, typeof workouts>();
@@ -149,6 +162,19 @@ export default async function HistoryPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {hasMore && (
+        <div className="text-center pb-4">
+          <Link
+            href={`/history?page=${page + 1}`}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border px-5 py-2.5 text-sm text-muted-foreground hover:border-amber-500/30 hover:text-amber-400 transition-colors"
+          >
+            Załaduj więcej
+            <ChevronRight className="h-4 w-4" />
+          </Link>
         </div>
       )}
     </div>

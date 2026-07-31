@@ -7,7 +7,9 @@ import { pl } from "date-fns/locale";
 import { ArrowLeft, Clock, Flame, Dumbbell } from "lucide-react";
 import { formatDuration, setVolume } from "@/lib/fitness-utils";
 import { EQUIPMENT } from "@/lib/constants";
+import { getExerciseImage } from "@/lib/exercise-images";
 import { SaveAsPlanButton } from "./save-as-plan-button";
+import { DeleteWorkoutButton } from "./delete-workout-button";
 
 export default async function WorkoutDetailPage({
   params,
@@ -21,7 +23,7 @@ export default async function WorkoutDetailPage({
     where: { id, userId: user.id },
     include: {
       sets: {
-        include: { exercise: true },
+        include: { exercise: { include: { muscles: true } } },
         orderBy: [{ exerciseId: "asc" }, { setNumber: "asc" }],
       },
     },
@@ -77,7 +79,10 @@ export default async function WorkoutDetailPage({
             )}
           </div>
         </div>
-        <SaveAsPlanButton workoutId={workout.id} />
+        <div className="flex items-center gap-2">
+          <SaveAsPlanButton workoutId={workout.id} />
+          <DeleteWorkoutButton workoutId={workout.id} />
+        </div>
       </div>
 
       {/* Summary card */}
@@ -104,9 +109,22 @@ export default async function WorkoutDetailPage({
             className="rounded-xl border border-border bg-card overflow-hidden"
           >
             <div className="px-4 py-3 border-b border-border flex items-center gap-3">
-              <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                <Dumbbell className="h-3.5 w-3.5 text-amber-400" />
-              </div>
+              {(() => {
+                const ex = sets[0].exercise;
+                const primaryMuscle = ex.muscles?.find((m: { isPrimary: boolean }) => m.isPrimary)?.muscleGroup;
+                const img = getExerciseImage(ex.videoUrl, primaryMuscle);
+                return (
+                  <div className="h-10 w-16 rounded-md bg-zinc-900 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                    {img.type === "youtube" ? (
+                      <img src={img.src} alt="" className="h-full w-full object-cover" />
+                    ) : img.type === "emoji" ? (
+                      <span className="text-lg">{img.emoji}</span>
+                    ) : (
+                      <Dumbbell className="h-4 w-4 text-muted-foreground/40" />
+                    )}
+                  </div>
+                );
+              })()}
               <div>
                 <p className="font-medium text-sm">{sets[0].exercise.name}</p>
                 <p className="text-xs text-muted-foreground">

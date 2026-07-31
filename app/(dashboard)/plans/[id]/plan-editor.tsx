@@ -279,6 +279,7 @@ export function PlanEditor({ routine }: Props) {
   // ─── Delete plan ───
 
   const handleDelete = useCallback(async () => {
+    if (!confirm("Na pewno usunąć ten plan?")) return;
     await deleteRoutine(routine.id);
     router.push("/plans");
     router.refresh();

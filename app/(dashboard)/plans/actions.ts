@@ -37,13 +37,14 @@ export async function getRoutine(id: string) {
 
 // ─── Create routine ───
 
-export async function createRoutine(data: { name: string; description?: string }) {
+export async function createRoutine(data: { name: string; description?: string; source?: string }) {
   const user = await getUser();
   const routine = await prisma.routine.create({
     data: {
       userId: user.id,
       name: data.name,
       description: data.description ?? null,
+      source: data.source ?? "manual",
     },
     include: {
       exercises: {

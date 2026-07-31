@@ -34,9 +34,19 @@ export function FinishModal({ workoutId, setCount, onClose }: FinishModalProps) 
 
   const handleFinish = async () => {
     setLoading(true);
-    const res = await finishWorkoutAction(workoutId);
-    setResult(res as FinishResult);
-    setLoading(false);
+    try {
+      const res = await finishWorkoutAction(workoutId);
+      if (res && "error" in res) {
+        onClose();
+        router.push("/workout");
+        return;
+      }
+      setResult(res as FinishResult);
+    } catch {
+      onClose();
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!result) {

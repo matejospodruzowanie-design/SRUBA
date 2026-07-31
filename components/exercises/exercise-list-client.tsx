@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { Dumbbell, Plus, Trash2 } from "lucide-react";
 import { MUSCLE_GROUPS, EQUIPMENT } from "@/lib/constants";
+import { getExerciseImage } from "@/lib/exercise-images";
 import { deleteCustomExercise } from "@/app/(dashboard)/exercises/actions";
 import { CustomExerciseModal } from "./custom-exercise-modal";
 import { toast } from "sonner";
@@ -13,6 +14,7 @@ interface Exercise {
   name: string;
   equipment: string | null;
   isCustom: boolean;
+  videoUrl: string | null;
   muscles: { muscleGroup: string; isPrimary: boolean }[];
 }
 
@@ -28,6 +30,7 @@ export function ExerciseListClient({ exercises }: Props) {
   const visible = exercises.filter((e) => !deletedIds.has(e.id));
 
   const handleDelete = (id: string) => {
+    if (!confirm("Na pewno usunąć to ćwiczenie?")) return;
     setDeletedIds((prev) => new Set(prev).add(id));
     startTransition(async () => {
       const result = await deleteCustomExercise(id);
@@ -69,9 +72,20 @@ export function ExerciseListClient({ exercises }: Props) {
                 href={`/exercises/${ex.id}`}
                 className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 hover:border-amber-500/20 transition-all block"
               >
-                <div className="h-10 w-10 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                  <Dumbbell className="h-4 w-4 text-amber-400" />
-                </div>
+                {(() => {
+                  const image = getExerciseImage(ex.videoUrl, ex.muscles.find((m) => m.isPrimary)?.muscleGroup);
+                  return (
+                    <div className="h-12 w-20 rounded-md bg-zinc-900 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                      {image.type === "youtube" ? (
+                        <img src={image.src} alt="" className="h-full w-full object-cover" loading="lazy" />
+                      ) : image.type === "emoji" ? (
+                        <span className="text-2xl">{image.emoji}</span>
+                      ) : (
+                        <Dumbbell className="h-5 w-5 text-muted-foreground/40" />
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">
                     {ex.name}

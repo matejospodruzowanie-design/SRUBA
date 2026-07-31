@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { EQUIPMENT, MUSCLE_GROUPS } from "@/lib/constants";
-import { ArrowLeft, Play, Info } from "lucide-react";
+import { ArrowLeft, Play, Info, Dumbbell, TrendingUp } from "lucide-react";
 import Link from "next/link";
+import { getExerciseImage } from "@/lib/exercise-images";
 
 export default async function ExerciseDetailPage({
   params,
@@ -22,6 +23,7 @@ export default async function ExerciseDetailPage({
 
   const primaryMuscles = exercise.muscles.filter((m) => m.isPrimary);
   const secondaryMuscles = exercise.muscles.filter((m) => !m.isPrimary);
+  const image = getExerciseImage(exercise.videoUrl, primaryMuscles[0]?.muscleGroup);
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -33,9 +35,21 @@ export default async function ExerciseDetailPage({
         Powrót do biblioteki
       </Link>
 
-      <div>
-        <h1 className="text-2xl font-bold">{exercise.name}</h1>
-        <div className="flex flex-wrap gap-2 mt-2">
+      {/* Thumbnail */}
+      <div className="h-48 sm:h-56 w-full rounded-xl bg-zinc-900 overflow-hidden flex items-center justify-center border border-border">
+        {image.type === "youtube" ? (
+          <img src={image.src} alt="" className="h-full w-full object-cover" />
+        ) : image.type === "emoji" ? (
+          <span className="text-6xl">{image.emoji}</span>
+        ) : (
+          <Dumbbell className="h-12 w-12 text-muted-foreground/30" />
+        )}
+      </div>
+
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">{exercise.name}</h1>
+          <div className="flex flex-wrap gap-2 mt-2">
           {exercise.equipment && (
             <span className="rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-400">
               {EQUIPMENT.find((e) => e.id === exercise.equipment)?.label || exercise.equipment}
@@ -50,6 +64,13 @@ export default async function ExerciseDetailPage({
             </span>
           ))}
         </div>
+        </div>
+        <Link
+          href={`/progress/${exercise.id}`}
+          className="flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-400 hover:bg-amber-500/20 transition-colors flex-shrink-0"
+        >
+          <TrendingUp className="h-3.5 w-3.5" /> Progress
+        </Link>
       </div>
 
       {/* Video embed */}
@@ -57,7 +78,9 @@ export default async function ExerciseDetailPage({
         <div className="rounded-xl overflow-hidden border border-border">
           <div className="aspect-video">
             <iframe
-              src={exercise.videoUrl.replace("watch?v=", "embed/")}
+              src={exercise.videoUrl
+                .replace(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11}).*/, "https://youtube.com/embed/$1")
+                .replace("watch?v=", "embed/")}
               allow="accelerometer; autoplay; encrypted-media; gyroscope"
               allowFullScreen
               className="w-full h-full"

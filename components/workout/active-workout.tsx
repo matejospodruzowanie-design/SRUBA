@@ -2,12 +2,12 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Flag, Dumbbell, Target } from "lucide-react";
+import { Plus, Flag, Dumbbell, Target, X } from "lucide-react";
 import { ExercisePicker } from "./exercise-picker";
 import { SetLogger } from "./set-logger";
 import { RestTimer } from "./rest-timer";
 import { FinishModal } from "./finish-modal";
-import { startWorkout } from "@/app/(dashboard)/workout/actions";
+import { startWorkout, removeExerciseFromWorkout } from "@/app/(dashboard)/workout/actions";
 import { recommendedRest, formatTime } from "@/lib/fitness-utils";
 import { toast } from "sonner";
 
@@ -74,11 +74,26 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
   const [elapsed, setElapsed] = useState(0);
 
   // ─── Start workout ───
-  const handleStart = useCallback(async () => {
+  const handleStart = useCallback(async (forceDiscard = false) => {
     const name = workoutName.trim() || `Trening ${new Date().toLocaleDateString("pl-PL")}`;
-    const workout = await startWorkout(name, workoutNotes || undefined);
-    setWorkoutId(workout.id);
-    setWorkoutName(workout.name);
+    const result = await startWorkout(name, workoutNotes || undefined, forceDiscard);
+
+    if ("conflict" in result && result.conflict) {
+      const existing = result.existingWorkout;
+      if (confirm(`Masz aktywny trening "${existing.name}" z ${existing.setCount} seriami. Czy chcesz go porzucić i zacząć nowy?`)) {
+        const forced = await startWorkout(name, workoutNotes || undefined, true);
+        if ("id" in forced) {
+          setWorkoutId(forced.id);
+          setWorkoutName(forced.name);
+        }
+      }
+      return;
+    }
+
+    if ("id" in result) {
+      setWorkoutId(result.id);
+      setWorkoutName(result.name);
+    }
   }, [workoutName, workoutNotes]);
 
   // ─── Elapsed timer ───
@@ -102,16 +117,25 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
     setPickerOpen(false);
   };
 
+  // ─── Remove exercise ───
+  const handleRemoveExercise = (exerciseId: string, exerciseName: string) => {
+    if (!workoutId) return;
+    if (!confirm(`Usunąć "${exerciseName}" z treningu? Wszystkie jego serie zostaną utracone.`)) return;
+    setExercises((prev) => prev.filter((e) => e.id !== exerciseId));
+    setAllSets((prev) => prev.filter((s) => s.exerciseId !== exerciseId));
+    removeExerciseFromWorkout(workoutId, exerciseId);
+  };
+
   // ─── Set added → show rest timer ───
-  const handleSetAdded = (exerciseId: string, exerciseName: string, equipment: string | null, prs: unknown[]) => {
+  const handleSetAdded = (exerciseId: string, exerciseName: string, equipment: string | null, prs: unknown[], setRpe?: number) => {
     if (prs.length > 0) {
       prs.forEach((pr: unknown) => {
         const p = pr as { exerciseName: string; type: string; newValue: number };
         toast.success(`🔥 Nowy rekord: ${p.exerciseName} — ${p.type}: ${p.newValue}!`);
       });
     }
-    // Auto-start rest timer with recommended rest
-    const rest = recommendedRest(exerciseName, equipment, null);
+    // Auto-start rest timer with recommended rest (using actual RPE from the set)
+    const rest = recommendedRest(exerciseName, equipment, setRpe ?? null);
     setRestSeconds(rest);
     setShowRestTimer(true);
   };
@@ -157,7 +181,7 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
               placeholder="np. Cel na dziś, samopoczucie..." rows={2}
               className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-none" />
           </div>
-          <button onClick={handleStart}
+          <button onClick={() => handleStart()}
             className="w-full rounded-lg bg-amber-500 py-3 text-sm font-semibold text-black hover:bg-amber-400 transition-colors">
             Rozpocznij trening
           </button>
@@ -244,6 +268,14 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
                         ))}
                     </div>
                   </div>
+                  {/* Remove exercise button */}
+                  <button
+                    onClick={() => handleRemoveExercise(exercise.id, exercise.name)}
+                    className="text-muted-foreground/30 hover:text-red-400 transition-colors p-1 flex-shrink-0 ml-1"
+                    title="Usuń ćwiczenie z treningu"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
 
                 {/* Set logger — always visible */}

@@ -32,6 +32,7 @@ export default async function ExercisesPage({
       name: true,
       equipment: true,
       isCustom: true,
+      videoUrl: true,
       muscles: { select: { muscleGroup: true, isPrimary: true } },
     },
     take: 100,

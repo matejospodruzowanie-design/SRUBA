@@ -494,6 +494,8 @@ async function main() {
   }
   console.log(`  ✓ ${achievements.length} achievements seeded`);
 
+  console.log(`  ✓ ${achievements.length} achievements seeded`);
+
   console.log("\n✅ Seed complete!");
 }
 

@@ -91,6 +91,7 @@ model WorkoutSet {
   rpe         Float?
   completedAt DateTime @default(now())
   isPR        Boolean  @default(false)
+  isWarmup    Boolean  @default(false)
 
   @@index([workoutId])
   @@index([exerciseId, completedAt])

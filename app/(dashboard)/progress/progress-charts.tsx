@@ -131,6 +131,7 @@ export function ProgressCharts({
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
 
   const handleDeleteMeasurement = (id: string) => {
+    if (!confirm("Na pewno usunąć ten pomiar?")) return;
     setDeletedIds((prev) => new Set(prev).add(id));
     startTransition(() => {
       deleteBodyMeasurement(id);
@@ -438,6 +439,115 @@ export function ProgressCharts({
                     />
                   </LineChart>
                 </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Body fat % chart */}
+          {bodyMeasurements.filter((m) => m.bodyFatPct != null).length >= 2 && (
+            <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+              <h3 className="text-sm font-semibold mb-4">
+                📉 Body fat %
+              </h3>
+              <div className="h-48 sm:h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={bodyMeasurements
+                      .filter((m) => m.bodyFatPct != null)
+                      .reverse()
+                      .map((m) => ({
+                        date: format(new Date(m.date), "dd.MM", { locale: pl }),
+                        bf: m.bodyFatPct!,
+                      }))}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 11, fill: "#71717a" }}
+                      axisLine={{ stroke: "#27272a" }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: "#71717a" }}
+                      axisLine={false}
+                      tickLine={false}
+                      domain={["dataMin - 2", "dataMax + 2"]}
+                      width={45}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "#18181b",
+                        border: "1px solid #27272a",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                      }}
+                      formatter={(value) => [`${value}%`, "BF%"]}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="bf"
+                      stroke="#22c55e"
+                      strokeWidth={2}
+                      dot={{ fill: "#22c55e", r: 3 }}
+                      activeDot={{ fill: "#22c55e", r: 5 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Circumference trends */}
+          {bodyMeasurements.filter((m) => m.chestCm != null || m.waistCm != null || m.armsCm != null).length >= 2 && (
+            <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+              <h3 className="text-sm font-semibold mb-4">
+                📏 Obwody (cm)
+              </h3>
+              <div className="h-48 sm:h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={bodyMeasurements
+                      .filter((m) => m.chestCm != null || m.waistCm != null || m.armsCm != null)
+                      .reverse()
+                      .map((m) => ({
+                        date: format(new Date(m.date), "dd.MM", { locale: pl }),
+                        chest: m.chestCm ?? null,
+                        waist: m.waistCm ?? null,
+                        arms: m.armsCm ?? null,
+                      }))}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 11, fill: "#71717a" }}
+                      axisLine={{ stroke: "#27272a" }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: "#71717a" }}
+                      axisLine={false}
+                      tickLine={false}
+                      domain={["dataMin - 3", "dataMax + 3"]}
+                      width={45}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "#18181b",
+                        border: "1px solid #27272a",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                      }}
+                    />
+                    <Line type="monotone" dataKey="chest" stroke="#ef4444" strokeWidth={2} dot={{ fill: "#ef4444", r: 2 }} connectNulls />
+                    <Line type="monotone" dataKey="waist" stroke="#f59e0b" strokeWidth={2} dot={{ fill: "#f59e0b", r: 2 }} connectNulls />
+                    <Line type="monotone" dataKey="arms" stroke="#3b82f6" strokeWidth={2} dot={{ fill: "#3b82f6", r: 2 }} connectNulls />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex justify-center gap-4 mt-2 text-[10px] text-muted-foreground">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Klatka</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Talia</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /> Biceps</span>
               </div>
             </div>
           )}
