@@ -9,22 +9,29 @@ import { useState, useEffect } from "react";
 const SPLASH_KEY = "sruba-splash-shown";
 
 export function SplashScreen() {
-  // Show splash by default (SSR/hydration safe), hide immediately if already seen
   const [visible, setVisible] = useState(true);
   const [fadeOut, setFadeOut] = useState(false);
+  // Generate random particle positions only on client to avoid hydration mismatch
+  const [particles, setParticles] = useState<Array<{ left: string; top: string; delay: string; duration: string }>>([]);
 
   useEffect(() => {
-    // Check if splash was already shown this session
     if (sessionStorage.getItem(SPLASH_KEY)) {
       setVisible(false);
       return;
     }
-    // Mark as shown immediately
     sessionStorage.setItem(SPLASH_KEY, "1");
 
-    // Start fade out after 2.2s
+    // Generate particles client-side only
+    setParticles(
+      Array.from({ length: 6 }, (_, i) => ({
+        left: `${20 + Math.random() * 60}%`,
+        top: `${20 + Math.random() * 60}%`,
+        delay: `${i * 0.3}s`,
+        duration: `${2 + Math.random() * 2}s`,
+      }))
+    );
+
     const fadeTimer = setTimeout(() => setFadeOut(true), 2200);
-    // Remove from DOM after fade completes
     const removeTimer = setTimeout(() => setVisible(false), 2700);
     return () => {
       clearTimeout(fadeTimer);
@@ -49,16 +56,16 @@ export function SplashScreen() {
               "radial-gradient(circle, rgba(245,158,11,0.15) 0%, transparent 70%)",
           }}
         />
-        {/* Floating particles */}
-        {[...Array(6)].map((_, i) => (
+        {/* Floating particles — rendered only after client-side positions are generated */}
+        {particles.map((p, i) => (
           <div
             key={i}
             className="absolute w-1 h-1 rounded-full bg-amber-400/30 animate-float"
             style={{
-              left: `${20 + Math.random() * 60}%`,
-              top: `${20 + Math.random() * 60}%`,
-              animationDelay: `${i * 0.3}s`,
-              animationDuration: `${2 + Math.random() * 2}s`,
+              left: p.left,
+              top: p.top,
+              animationDelay: p.delay,
+              animationDuration: p.duration,
             }}
           />
         ))}
