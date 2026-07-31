@@ -7,6 +7,7 @@ import { pl } from "date-fns/locale";
 import { ArrowLeft, Clock, Flame, Dumbbell } from "lucide-react";
 import { formatDuration, setVolume } from "@/lib/fitness-utils";
 import { EQUIPMENT } from "@/lib/constants";
+import { SaveAsPlanButton } from "./save-as-plan-button";
 
 export default async function WorkoutDetailPage({
   params,
@@ -55,25 +56,28 @@ export default async function WorkoutDetailPage({
       </Link>
 
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold">{workout.name}</h1>
-        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground mt-1">
-          <span>
-            {format(new Date(workout.startedAt), "d MMMM yyyy, HH:mm", {
-              locale: pl,
-            })}
-          </span>
-          {workout.durationSeconds && (
-            <span className="flex items-center gap-1">
-              <Clock className="h-3.5 w-3.5" /> {formatDuration(workout.durationSeconds)}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">{workout.name}</h1>
+          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground mt-1">
+            <span>
+              {format(new Date(workout.startedAt), "d MMMM yyyy, HH:mm", {
+                locale: pl,
+              })}
             </span>
-          )}
-          {prCount > 0 && (
-            <span className="flex items-center gap-1 text-amber-400">
-              <Flame className="h-3.5 w-3.5" /> {prCount} rekordów
-            </span>
-          )}
+            {workout.durationSeconds && (
+              <span className="flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5" /> {formatDuration(workout.durationSeconds)}
+              </span>
+            )}
+            {prCount > 0 && (
+              <span className="flex items-center gap-1 text-amber-400">
+                <Flame className="h-3.5 w-3.5" /> {prCount} rekordów
+              </span>
+            )}
+          </div>
         </div>
+        <SaveAsPlanButton workoutId={workout.id} />
       </div>
 
       {/* Summary card */}

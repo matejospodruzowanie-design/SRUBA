@@ -3,11 +3,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { Search, X } from "lucide-react";
 import { MUSCLE_GROUPS } from "@/lib/constants";
+import { getExerciseImage } from "@/lib/exercise-images";
 
 interface Exercise {
   id: string;
   name: string;
   equipment: string | null;
+  videoUrl: string | null;
   muscles: { muscleGroup: string; isPrimary: boolean }[];
 }
 
@@ -130,6 +132,7 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
             <div className="space-y-1">
               {exercises.map((ex) => {
                 const alreadyInWorkout = workoutExerciseIds.includes(ex.id);
+                const image = getExerciseImage(ex.videoUrl, ex.muscles.find((m) => m.isPrimary)?.muscleGroup);
                 return (
                   <button
                     key={ex.id}
@@ -137,23 +140,35 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
                       if (!alreadyInWorkout) onSelect(ex);
                     }}
                     disabled={alreadyInWorkout}
-                    className={`w-full text-left rounded-lg p-3 transition-colors ${
+                    className={`w-full text-left rounded-lg p-2.5 transition-colors flex items-center gap-3 ${
                       alreadyInWorkout
                         ? "opacity-40 cursor-not-allowed"
                         : "hover:bg-amber-500/10"
                     }`}
                   >
-                    <p className="text-sm font-medium">
-                      {ex.name}
-                      {alreadyInWorkout && " (już dodane)"}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {ex.muscles
-                        .filter((m) => m.isPrimary)
-                        .map((m) => MUSCLE_GROUPS.find((mg) => mg.id === m.muscleGroup)?.label)
-                        .filter(Boolean)
-                        .join(", ")}
-                    </p>
+                    {/* Thumbnail */}
+                    <div className="h-12 w-16 rounded-md bg-zinc-900 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                      {image.type === "youtube" ? (
+                        <img src={image.src} alt="" className="h-full w-full object-cover" loading="lazy" />
+                      ) : image.type === "emoji" ? (
+                        <span className="text-xl">{image.emoji}</span>
+                      ) : (
+                        <span className="text-muted-foreground/40 text-lg">🏋️</span>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">
+                        {ex.name}
+                        {alreadyInWorkout && " (już dodane)"}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {ex.muscles
+                          .filter((m) => m.isPrimary)
+                          .map((m) => MUSCLE_GROUPS.find((mg) => mg.id === m.muscleGroup)?.label)
+                          .filter(Boolean)
+                          .join(", ")}
+                      </p>
+                    </div>
                   </button>
                 );
               })}

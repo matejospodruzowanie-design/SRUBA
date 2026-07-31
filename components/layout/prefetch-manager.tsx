@@ -14,8 +14,6 @@ const ALL_ROUTES = [
   "/exercises",
   "/plans",
   "/progress",
-  "/challenges",
-  "/coach",
   "/profile",
   "/app",
 ];

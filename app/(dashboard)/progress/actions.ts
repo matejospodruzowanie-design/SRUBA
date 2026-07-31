@@ -86,7 +86,7 @@ export async function getPRHistory() {
 
   return prisma.personalRecord.findMany({
     where: { userId: user.id },
-    include: { exercise: { select: { name: true } } },
+    include: { exercise: { select: { id: true, name: true } } },
     orderBy: { achievedAt: "desc" },
     take: 50,
   });

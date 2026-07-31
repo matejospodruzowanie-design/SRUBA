@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useOptimistic, useTransition } from "react";
-import { Trash2, Flame, TrendingUp, Pencil, Check, X, Plus } from "lucide-react";
+import { useState, useEffect, useOptimistic, useTransition } from "react";
+import { Trash2, Flame, TrendingUp, Pencil, Check, X, Plus, Undo2 } from "lucide-react";
 import { addSet, deleteSet, updateSet } from "@/app/(dashboard)/workout/actions";
 
 interface ExerciseLite {
@@ -56,6 +56,8 @@ export function SetLogger({
 }: Props) {
   const [isPending, startTransition] = useTransition();
   const [suggestion, setSuggestion] = useState<{ weight: number; reason: string } | null>(null);
+  const [lastLoggedSetId, setLastLoggedSetId] = useState<string | null>(null);
+  const [undoCountdown, setUndoCountdown] = useState(0);
 
   // Inline edit state (for editing already-logged sets)
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
@@ -75,6 +77,29 @@ export function SetLogger({
 
   const exerciseSets = optimisticSets.filter((s) => s.exerciseId === exerciseId);
   const actualSetCount = exerciseSets.filter((s) => !s.id.startsWith("optimistic")).length;
+
+  // Undo countdown
+  useEffect(() => {
+    if (undoCountdown <= 0 || !lastLoggedSetId) return;
+    const timer = setInterval(() => {
+      setUndoCountdown((prev) => {
+        if (prev <= 1) {
+          setLastLoggedSetId(null);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [undoCountdown, lastLoggedSetId]);
+
+  const handleUndo = () => {
+    if (!lastLoggedSetId) return;
+    const setId = lastLoggedSetId;
+    setLastLoggedSetId(null);
+    setUndoCountdown(0);
+    startTransition(() => deleteSet(setId));
+  };
 
   const updateRow = (index: number, field: "weight" | "reps" | "rpe", value: string) => {
     setRows((prev) =>
@@ -120,6 +145,10 @@ export function SetLogger({
       } else {
         setSuggestion(null);
       }
+
+      // Enable undo for the just-logged set
+      setLastLoggedSetId(result.set.id);
+      setUndoCountdown(5);
     });
 
     // Clear this row and shift others up, add fresh row at bottom
@@ -319,6 +348,21 @@ export function SetLogger({
           </button>
         </div>
       ))}
+
+      {/* Undo bar */}
+      {lastLoggedSetId && undoCountdown > 0 && (
+        <div className="flex items-center justify-between rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-sm">
+          <span className="text-amber-400/80 text-xs">
+            Seria zapisana — {undoCountdown}s
+          </span>
+          <button
+            onClick={handleUndo}
+            className="flex items-center gap-1 text-amber-400 hover:text-amber-300 font-medium text-xs transition-colors"
+          >
+            <Undo2 className="h-3.5 w-3.5" /> Cofnij
+          </button>
+        </div>
+      )}
 
       {/* Suggestion pill */}
       {suggestion && (

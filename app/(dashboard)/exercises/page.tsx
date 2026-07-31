@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { MUSCLE_GROUPS, EQUIPMENT } from "@/lib/constants";
 import Link from "next/link";
 import { Dumbbell, Search } from "lucide-react";
+import { ExerciseListClient } from "@/components/exercises/exercise-list-client";
 
 export default async function ExercisesPage({
   searchParams,
@@ -26,7 +27,13 @@ export default async function ExercisesPage({
 
   const exercises = await prisma.exercise.findMany({
     where,
-    include: { muscles: true },
+    select: {
+      id: true,
+      name: true,
+      equipment: true,
+      isCustom: true,
+      muscles: { select: { muscleGroup: true, isPrimary: true } },
+    },
     take: 100,
     orderBy: { name: "asc" },
   });
@@ -105,34 +112,8 @@ export default async function ExercisesPage({
         ))}
       </div>
 
-      {/* Exercise list */}
-      {exercises.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-12 text-center">
-          <Dumbbell className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Brak ćwiczeń dla wybranych filtrów</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-          {exercises.map((ex) => (
-            <Link
-              key={ex.id}
-              href={`/exercises/${ex.id}`}
-              className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 hover:border-amber-500/20 transition-all"
-            >
-              <div className="h-10 w-10 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                <Dumbbell className="h-4 w-4 text-amber-400" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium truncate">{ex.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {ex.muscles.map((m) => m.muscleGroup).join(", ")}
-                  {ex.equipment ? ` · ${EQUIPMENT.find((e) => e.id === ex.equipment)?.label || ex.equipment}` : ""}
-                </p>
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
+      {/* Exercise list — client component with modal and delete */}
+      <ExerciseListClient exercises={exercises} />
     </div>
   );
 }

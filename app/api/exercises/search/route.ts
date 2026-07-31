@@ -17,7 +17,13 @@ export async function GET(req: NextRequest) {
 
   const exercises = await prisma.exercise.findMany({
     where,
-    include: { muscles: { select: { muscleGroup: true, isPrimary: true } } },
+    select: {
+      id: true,
+      name: true,
+      equipment: true,
+      videoUrl: true,
+      muscles: { select: { muscleGroup: true, isPrimary: true } },
+    },
     take: Math.min(limit, 100),
     orderBy: { name: "asc" },
   });

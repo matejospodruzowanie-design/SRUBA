@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
 
-const protectedRoutes = ["/dashboard", "/workout", "/plans", "/history", "/progress", "/recovery", "/challenges", "/coach", "/profile", "/measurements", "/exercises", "/app"];
+const protectedRoutes = ["/dashboard", "/workout", "/plans", "/history", "/progress", "/challenges", "/coach", "/profile", "/exercises", "/app"];
 const publicRoutes = ["/login", "/register"];
 
 export default async function proxy(req: NextRequest) {

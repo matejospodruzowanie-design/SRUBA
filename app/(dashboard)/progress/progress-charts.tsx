@@ -11,6 +11,8 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  LineChart,
+  Line,
 } from "recharts";
 import {
   TrendingUp,
@@ -26,6 +28,7 @@ import { MUSCLE_GROUPS } from "@/lib/constants";
 import { format } from "date-fns";
 import { deleteBodyMeasurement } from "./actions";
 import { pl } from "date-fns/locale";
+import Link from "next/link";
 
 // ─── Types ───
 
@@ -41,7 +44,7 @@ interface WorkoutFreqItem {
 
 interface PRItem {
   id: string;
-  exercise: { name: string };
+  exercise: { id: string; name: string };
   type: string;
   value: number;
   achievedAt: Date;
@@ -355,13 +358,14 @@ export function ProgressCharts({
               </h3>
               <div className="space-y-1 max-h-80 overflow-y-auto">
                 {prs.slice(0, 15).map((pr) => (
-                  <div
+                  <Link
                     key={pr.id}
-                    className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-zinc-900/50 transition-colors"
+                    href={`/progress/${pr.exercise.id}`}
+                    className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-amber-500/10 transition-colors"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <Flame className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
-                      <span className="text-sm truncate">
+                      <span className="text-sm truncate hover:text-amber-400 transition-colors">
                         {pr.exercise.name}
                       </span>
                     </div>
@@ -378,8 +382,62 @@ export function ProgressCharts({
                         })}
                       </span>
                     </div>
-                  </div>
+                  </Link>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Weight chart */}
+          {bodyMeasurements.filter((m) => m.weightKg != null).length >= 2 && (
+            <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+              <h3 className="text-sm font-semibold mb-4">
+                ⚖️ Waga ciała
+              </h3>
+              <div className="h-48 sm:h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={bodyMeasurements
+                      .filter((m) => m.weightKg != null)
+                      .reverse()
+                      .map((m) => ({
+                        date: format(new Date(m.date), "dd.MM", { locale: pl }),
+                        weight: m.weightKg!,
+                      }))}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 11, fill: "#71717a" }}
+                      axisLine={{ stroke: "#27272a" }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: "#71717a" }}
+                      axisLine={false}
+                      tickLine={false}
+                      domain={["dataMin - 2", "dataMax + 2"]}
+                      width={45}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "#18181b",
+                        border: "1px solid #27272a",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                      }}
+                      formatter={(value) => [`${value} kg`, "Waga"]}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="weight"
+                      stroke="#f59e0b"
+                      strokeWidth={2}
+                      dot={{ fill: "#f59e0b", r: 3 }}
+                      activeDot={{ fill: "#f59e0b", r: 5, strokeWidth: 2, stroke: "#fbbf24" }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
             </div>
           )}

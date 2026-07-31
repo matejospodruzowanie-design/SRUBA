@@ -12,7 +12,7 @@ interface RestTimerProps {
 
 export function RestTimer({ defaultSeconds, onComplete, onSkip }: RestTimerProps) {
   const [seconds, setSeconds] = useState(defaultSeconds);
-  const [isRunning, setIsRunning] = useState(false);
+  const [isRunning, setIsRunning] = useState(true); // Auto-start like Strong/Hevy
   const [soundEnabled, setSoundEnabled] = useState(true);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -90,23 +90,30 @@ export function RestTimer({ defaultSeconds, onComplete, onSkip }: RestTimerProps
         </button>
       </div>
 
-      {/* Timer display */}
-      <div className="text-center">
-        <span className={`text-5xl font-mono font-bold tracking-tight ${timerColor}`}>
+      {/* Timer display with circular ring */}
+      <div className="relative flex items-center justify-center">
+        {/* SVG circular countdown ring */}
+        <svg className="absolute w-36 h-36 -rotate-90" viewBox="0 0 120 120">
+          <circle
+            cx="60" cy="60" r="54"
+            fill="none"
+            stroke="#27272a"
+            strokeWidth="4"
+          />
+          <circle
+            cx="60" cy="60" r="54"
+            fill="none"
+            stroke={seconds <= 5 ? "#f87171" : seconds <= 15 ? "#fbbf24" : "#4ade80"}
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeDasharray={`${2 * Math.PI * 54}`}
+            strokeDashoffset={`${2 * Math.PI * 54 * (1 - progress / 100)}`}
+            className="transition-all duration-1000 ease-linear"
+          />
+        </svg>
+        <span className={`text-4xl font-mono font-bold tracking-tight relative z-10 ${timerColor}`}>
           {formatTime(seconds)}
         </span>
-      </div>
-
-      {/* Progress bar */}
-      <div className="h-1.5 rounded-full bg-border overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-1000 ease-linear"
-          style={{
-            width: `${progress}%`,
-            backgroundColor:
-              seconds <= 5 ? "#f87171" : seconds <= 15 ? "#fbbf24" : "#4ade80",
-          }}
-        />
       </div>
 
       {/* Controls */}
