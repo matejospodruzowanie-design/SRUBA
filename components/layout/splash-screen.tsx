@@ -6,11 +6,22 @@ import { useState, useEffect } from "react";
  * Full-screen splash animation on app startup.
  * Shows on cold start, auto-dismisses after animation.
  */
+const SPLASH_KEY = "sruba-splash-shown";
+
 export function SplashScreen() {
+  // Show splash by default (SSR/hydration safe), hide immediately if already seen
   const [visible, setVisible] = useState(true);
   const [fadeOut, setFadeOut] = useState(false);
 
   useEffect(() => {
+    // Check if splash was already shown this session
+    if (sessionStorage.getItem(SPLASH_KEY)) {
+      setVisible(false);
+      return;
+    }
+    // Mark as shown immediately
+    sessionStorage.setItem(SPLASH_KEY, "1");
+
     // Start fade out after 2.2s
     const fadeTimer = setTimeout(() => setFadeOut(true), 2200);
     // Remove from DOM after fade completes

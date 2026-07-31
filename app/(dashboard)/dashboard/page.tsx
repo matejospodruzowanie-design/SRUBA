@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { getUser } from "@/lib/session";
-import { Dumbbell, TrendingUp, Target, Flame, Zap, ChevronRight } from "lucide-react";
+import { prisma } from "@/lib/db";
+import { Dumbbell, TrendingUp, Target, Flame, Zap, ChevronRight, Clock, BarChart3 } from "lucide-react";
 import { SetupCard } from "@/components/onboarding/setup-card";
 import { RecoverySection } from "@/components/recovery/recovery-section";
 import { SkeletonCard } from "@/components/ui/skeleton";
+import { formatDistanceToNow } from "date-fns";
+import { pl } from "date-fns/locale";
+import { formatDuration } from "@/lib/fitness-utils";
 
 const RANK_LABELS: Record<string, string> = {
   bronze: "Brąz",
@@ -26,6 +30,20 @@ const RANK_COLORS: Record<string, string> = {
 
 export default async function DashboardPage() {
   const user = await getUser();
+
+  // Fetch last completed workout for summary
+  const lastWorkout = await prisma.workout.findFirst({
+    where: { userId: user.id, isActive: false, endedAt: { not: null } },
+    orderBy: { endedAt: "desc" },
+    include: {
+      sets: {
+        select: { id: true, weightKg: true, reps: true, isPR: true },
+      },
+    },
+  });
+
+  const lastVolume = lastWorkout?.sets.reduce((sum, s) => sum + (s.weightKg ?? 0) * s.reps, 0) ?? 0;
+  const lastPRs = lastWorkout?.sets.filter((s) => s.isPR).length ?? 0;
 
   return (
     <div className="space-y-5 sm:space-y-8 stagger-children">
@@ -140,6 +158,46 @@ export default async function DashboardPage() {
           </div>
         </Link>
       </div>
+
+      {/* Last workout summary */}
+      {lastWorkout && (
+        <Link
+          href={`/workout/${lastWorkout.id}`}
+          className="block rounded-xl border border-border bg-card hover:border-amber-500/20 transition-all p-4 space-y-2 group"
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-muted-foreground">Ostatni trening</h3>
+            <span className="text-xs text-muted-foreground/60">
+              {formatDistanceToNow(new Date(lastWorkout.endedAt!), { addSuffix: true, locale: pl })}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <p className="font-semibold group-hover:text-amber-400 transition-colors">
+              {lastWorkout.name}
+            </p>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {lastWorkout.durationSeconds ? formatDuration(lastWorkout.durationSeconds) : "—"}
+            </span>
+            <span className="flex items-center gap-1">
+              <BarChart3 className="h-3 w-3" />
+              {lastWorkout.sets.length} serii
+            </span>
+            <span className="flex items-center gap-1">
+              <Dumbbell className="h-3 w-3" />
+              {Math.round(lastVolume).toLocaleString()} kg
+            </span>
+            {lastPRs > 0 && (
+              <span className="flex items-center gap-1 text-amber-400">
+                <Flame className="h-3 w-3" />
+                {lastPRs} PR
+              </span>
+            )}
+          </div>
+        </Link>
+      )}
 
       {/* Recovery heatmap — streamed in */}
       <Suspense fallback={<SkeletonCard className="h-80" />}>
