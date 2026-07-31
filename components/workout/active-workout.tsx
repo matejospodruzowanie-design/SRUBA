@@ -241,13 +241,23 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
               }`}
             >
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-sm">{exercise.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {allSets.filter((s) => s.exerciseId === exercise.id).length} serii
-                  </p>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm truncate">{exercise.name}</p>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                    <span>
+                      {allSets.filter((s) => s.exerciseId === exercise.id && !s.id.startsWith("optimistic")).length} serii
+                    </span>
+                    {allSets.filter((s) => s.exerciseId === exercise.id).length > 0 && (
+                      <span className="text-amber-400/70 tabular-nums">
+                        {allSets
+                          .filter((s) => s.exerciseId === exercise.id)
+                          .map((s) => (s.weightKg ? `${s.weightKg}×${s.reps}` : `${s.reps}`))
+                          .join(" · ")}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <span className="text-muted-foreground text-xs">
+                <span className="text-muted-foreground text-xs ml-2 flex-shrink-0">
                   {selectedExerciseId === exercise.id ? "▼" : "▶"}
                 </span>
               </div>

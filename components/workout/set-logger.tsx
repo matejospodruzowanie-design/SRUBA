@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useOptimistic, useTransition } from "react";
-import { Trash2, Flame, TrendingUp, Pencil, Check, X } from "lucide-react";
+import { Trash2, Flame, TrendingUp, Pencil, Check, X, Plus } from "lucide-react";
 import { addSet, deleteSet, updateSet } from "@/app/(dashboard)/workout/actions";
 
 interface ExerciseLite {
@@ -34,6 +34,17 @@ interface Props {
   onSetAdded: (prs: unknown[]) => void;
 }
 
+const DEFAULT_ROWS = 3;
+
+function emptyRow(index: number) {
+  return {
+    key: `empty-${index}`,
+    weight: "",
+    reps: "",
+    rpe: "",
+  };
+}
+
 export function SetLogger({
   workoutId,
   exerciseId,
@@ -43,41 +54,52 @@ export function SetLogger({
   lastReps,
   onSetAdded,
 }: Props) {
-  const [weight, setWeight] = useState(
-    lastWeight ? String(lastWeight) : ""
-  );
-  const [reps, setReps] = useState(lastReps ? String(lastReps) : "");
-  const [rpe, setRpe] = useState("");
   const [isPending, startTransition] = useTransition();
   const [suggestion, setSuggestion] = useState<{ weight: number; reason: string } | null>(null);
+
+  // Inline edit state (for editing already-logged sets)
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
   const [editWeight, setEditWeight] = useState("");
   const [editReps, setEditReps] = useState("");
   const [editRpe, setEditRpe] = useState("");
+
+  // Pre-filled rows state — always starts with 3 empty input rows
+  const [rows, setRows] = useState(() =>
+    Array.from({ length: DEFAULT_ROWS }, (_, i) => emptyRow(i + 1))
+  );
+
   const [optimisticSets, addOptimisticSet] = useOptimistic(
     sets,
     (state: SetWithExercise[], newSet: SetWithExercise) => [...state, newSet]
   );
 
   const exerciseSets = optimisticSets.filter((s) => s.exerciseId === exerciseId);
+  const actualSetCount = exerciseSets.filter((s) => !s.id.startsWith("optimistic")).length;
 
-  const handleAddSet = () => {
-    const repsNum = parseInt(reps);
+  const updateRow = (index: number, field: "weight" | "reps" | "rpe", value: string) => {
+    setRows((prev) =>
+      prev.map((r, i) => (i === index ? { ...r, [field]: value } : r))
+    );
+  };
+
+  const logRow = (index: number) => {
+    const row = rows[index];
+    const repsNum = parseInt(row.reps);
     if (!repsNum || repsNum < 1) return;
 
-    const weightNum = weight ? parseFloat(weight) : undefined;
+    const weightNum = row.weight ? parseFloat(row.weight) : undefined;
 
     startTransition(async () => {
-      // Optimistic update
+      // Add optimistic set
       addOptimisticSet({
-        id: "optimistic-" + Date.now(),
+        id: "optimistic-" + Date.now() + "-" + index,
         workoutId,
         exerciseId,
         exercise: { id: exerciseId, name: exerciseName } as ExerciseLite,
         setNumber: exerciseSets.length + 1,
         weightKg: weightNum ?? null,
         reps: repsNum,
-        rpe: rpe ? parseFloat(rpe) : null,
+        rpe: row.rpe ? parseFloat(row.rpe) : null,
         completedAt: new Date(),
         isPR: false,
       } as SetWithExercise);
@@ -87,7 +109,7 @@ export function SetLogger({
         exerciseId,
         weightKg: weightNum,
         reps: repsNum,
-        rpe: rpe ? parseFloat(rpe) : undefined,
+        rpe: row.rpe ? parseFloat(row.rpe) : undefined,
       });
 
       if (result.prs.length > 0) {
@@ -100,9 +122,21 @@ export function SetLogger({
       }
     });
 
-    // Keep weight, clear reps for next set
-    setReps("");
-    setRpe("");
+    // Clear this row and shift others up, add fresh row at bottom
+    setRows((prev) => {
+      const next = prev.map((r, i) => {
+        if (i === index) return emptyRow(i + 1);
+        return r;
+      });
+      return next;
+    });
+  };
+
+  const handleKeyDown = (index: number) => (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      logRow(index);
+    }
   };
 
   const handleDelete = (setId: string) => {
@@ -133,156 +167,175 @@ export function SetLogger({
     setEditingSetId(null);
   };
 
-  const handleCancelEdit = () => {
-    setEditingSetId(null);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleAddSet();
-    }
-  };
-
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {/* Table header */}
-      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 text-xs text-muted-foreground uppercase tracking-wider px-1">
-        <span>Seria</span>
-        <span className="w-20 text-center">Ciężar</span>
-        <span className="w-14 text-center">Powt.</span>
-        <span className="w-10 text-center">RPE</span>
+      <div className="grid grid-cols-[36px_1fr_1fr_44px_32px] gap-1.5 text-[10px] text-muted-foreground uppercase tracking-wider px-1">
+        <span className="text-center">#</span>
+        <span className="text-center">kg</span>
+        <span className="text-center">Powt.</span>
+        <span className="text-center">RPE</span>
+        <span />
       </div>
 
-      {/* Existing sets */}
+      {/* Logged sets — read-only rows */}
       {exerciseSets.map((set) => {
         const isEditing = editingSetId === set.id;
         return (
-        <div
-          key={set.id}
-          className={`grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center rounded-lg px-3 py-2 text-sm ${
-            set.isPR ? "bg-amber-500/10 border border-amber-500/20" : "bg-border/20"
-          } ${isEditing ? "ring-1 ring-amber-500/30" : ""}`}
-        >
-          <div className="flex items-center gap-2">
-            {set.isPR && <Flame className="h-3.5 w-3.5 text-amber-400" />}
-            <span className="font-medium">#{set.setNumber}</span>
-            {set.id.startsWith("optimistic") && (
-              <span className="text-xs text-muted-foreground animate-pulse">zapisywanie...</span>
-            )}
-          </div>
-          {isEditing ? (
-            <>
-              <input
-                type="number"
-                value={editWeight}
-                onChange={(e) => setEditWeight(e.target.value)}
-                placeholder="kg"
-                step="2.5"
-                inputMode="decimal"
-                className="w-20 rounded border border-amber-500/30 bg-card px-2 py-1 text-sm text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50"
-              />
-              <input
-                type="number"
-                value={editReps}
-                onChange={(e) => setEditReps(e.target.value)}
-                placeholder="0"
-                min="1"
-                inputMode="numeric"
-                className="w-14 rounded border border-amber-500/30 bg-card px-2 py-1 text-sm text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50"
-              />
-              <div className="w-10 flex items-center gap-0.5">
-                <button onClick={handleSaveEdit} className="text-green-400 hover:text-green-300">
-                  <Check className="h-3.5 w-3.5" />
-                </button>
-                <button onClick={handleCancelEdit} className="text-muted-foreground hover:text-foreground">
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => handleStartEdit(set)}
-                className="w-20 text-center tabular-nums hover:text-amber-400 transition-colors cursor-pointer"
-                title="Kliknij by edytować"
-              >
-                {set.weightKg ? `${set.weightKg} kg` : "—"}
-              </button>
-              <button
-                onClick={() => handleStartEdit(set)}
-                className="w-14 text-center tabular-nums font-medium hover:text-amber-400 transition-colors cursor-pointer"
-                title="Kliknij by edytować"
-              >
-                {set.reps}
-              </button>
-              <div className="w-10 flex items-center justify-between">
+          <div
+            key={set.id}
+            className={`grid grid-cols-[36px_1fr_1fr_44px_32px] gap-1.5 items-center rounded-md px-2 py-1.5 text-sm ${
+              set.isPR
+                ? "bg-amber-500/10 border border-amber-500/20"
+                : "bg-zinc-900/30"
+            } ${isEditing ? "ring-1 ring-amber-500/50" : ""}`}
+          >
+            {/* Set number */}
+            <span className="text-center text-xs text-muted-foreground font-medium tabular-nums">
+              {set.isPR ? <Flame className="h-3 w-3 text-amber-400 inline mr-0.5" /> : null}
+              {set.setNumber}
+            </span>
+
+            {isEditing ? (
+              <>
+                <input
+                  type="number"
+                  value={editWeight}
+                  onChange={(e) => setEditWeight(e.target.value)}
+                  step="2.5"
+                  inputMode="decimal"
+                  className="w-full rounded border border-amber-500/30 bg-card px-1 py-1 text-sm text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+                />
+                <input
+                  type="number"
+                  value={editReps}
+                  onChange={(e) => setEditReps(e.target.value)}
+                  min="1"
+                  inputMode="numeric"
+                  className="w-full rounded border border-amber-500/30 bg-card px-1 py-1 text-sm text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+                />
+                <input
+                  type="number"
+                  value={editRpe}
+                  onChange={(e) => setEditRpe(e.target.value)}
+                  placeholder="-"
+                  min="0"
+                  max="10"
+                  step="0.5"
+                  inputMode="decimal"
+                  className="w-full rounded border border-amber-500/30 bg-card px-1 py-1 text-sm text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+                />
+                <div className="flex items-center justify-center gap-0.5">
+                  <button onClick={handleSaveEdit} className="text-green-400 hover:text-green-300">
+                    <Check className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
                 <button
                   onClick={() => handleStartEdit(set)}
-                  className="tabular-nums text-xs text-muted-foreground hover:text-amber-400 transition-colors cursor-pointer"
-                  title="Kliknij by edytować"
+                  className="text-center tabular-nums hover:text-amber-400 transition-colors cursor-pointer text-sm"
                 >
-                  {set.rpe ? `@${set.rpe}` : "—"}
+                  {set.weightKg != null ? `${set.weightKg}` : "—"}
                 </button>
-                {!set.id.startsWith("optimistic") && (
-                  <button
-                    onClick={() => handleDelete(set.id)}
-                    className="text-muted-foreground/40 hover:text-red-400 transition-colors ml-1"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      )})}
+                <button
+                  onClick={() => handleStartEdit(set)}
+                  className="text-center tabular-nums font-medium hover:text-amber-400 transition-colors cursor-pointer"
+                >
+                  {set.reps}
+                </button>
+                <button
+                  onClick={() => handleStartEdit(set)}
+                  className="text-center tabular-nums text-xs text-muted-foreground hover:text-amber-400 transition-colors cursor-pointer"
+                >
+                  {set.rpe != null ? set.rpe : "—"}
+                </button>
+                <div className="flex justify-center">
+                  {set.id.startsWith("optimistic") ? (
+                    <span className="text-[10px] text-muted-foreground animate-pulse">...</span>
+                  ) : (
+                    <button
+                      onClick={() => handleDelete(set.id)}
+                      className="text-muted-foreground/30 hover:text-red-400 transition-colors"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })}
 
-      {/* Input row */}
-      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center">
-        <div className="flex items-center gap-2 px-1">
-          <span className="text-sm text-muted-foreground">
-            #{exerciseSets.length + 1}
+      {/* Pre-filled empty input rows — Lyfta-style */}
+      {rows.map((row, index) => (
+        <div
+          key={row.key}
+          className="grid grid-cols-[36px_1fr_1fr_44px_32px] gap-1.5 items-center rounded-md px-2 py-1"
+        >
+          <span className="text-center text-xs text-muted-foreground tabular-nums">
+            {actualSetCount + index + 1}
           </span>
+          <input
+            type="number"
+            value={row.weight}
+            onChange={(e) => updateRow(index, "weight", e.target.value)}
+            onKeyDown={handleKeyDown(index)}
+            placeholder={(lastWeight && index === 0) ? String(lastWeight) : "kg"}
+            step="2.5"
+            inputMode="decimal"
+            className="w-full rounded border border-border bg-transparent px-2 py-2 text-sm text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50 placeholder:text-muted-foreground/40"
+          />
+          <input
+            type="number"
+            value={row.reps}
+            onChange={(e) => updateRow(index, "reps", e.target.value)}
+            onKeyDown={handleKeyDown(index)}
+            placeholder={(lastReps && index === 0) ? String(lastReps) : "0"}
+            min="1"
+            inputMode="numeric"
+            className="w-full rounded border border-border bg-transparent px-2 py-2 text-sm text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50 placeholder:text-muted-foreground/40"
+          />
+          <input
+            type="number"
+            value={row.rpe}
+            onChange={(e) => updateRow(index, "rpe", e.target.value)}
+            onKeyDown={handleKeyDown(index)}
+            placeholder="-"
+            min="0"
+            max="10"
+            step="0.5"
+            inputMode="decimal"
+            className="w-full rounded border border-border bg-transparent px-1 py-2 text-sm text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50 placeholder:text-muted-foreground/40"
+          />
+          <button
+            onClick={() => logRow(index)}
+            disabled={isPending || !row.reps}
+            className="flex items-center justify-center h-8 w-8 rounded-md bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <Check className="h-3.5 w-3.5" />
+          </button>
         </div>
-        <input
-          type="number"
-          value={weight}
-          onChange={(e) => setWeight(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="kg"
-          step="2.5"
-          inputMode="decimal"
-          className="w-20 rounded-lg border border-border bg-card px-2 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-        />
-        <input
-          type="number"
-          value={reps}
-          onChange={(e) => setReps(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="0"
-          min="1"
-          inputMode="numeric"
-          className="w-14 rounded-lg border border-border bg-card px-2 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-        />
-        <input
-          type="number"
-          value={rpe}
-          onChange={(e) => setRpe(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="—"
-          min="0"
-          max="10"
-          step="0.5"
-          inputMode="decimal"
-          className="w-10 rounded-lg border border-border bg-card px-1 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-        />
-      </div>
+      ))}
 
       {/* Suggestion pill */}
       {suggestion && (
         <button
-          onClick={() => setWeight(String(suggestion.weight))}
+          onClick={() => {
+            setRows((prev) => {
+              const next = [...prev];
+              // Fill first empty row's weight with suggestion
+              for (let i = 0; i < next.length; i++) {
+                if (!next[i].weight) {
+                  next[i] = { ...next[i], weight: String(suggestion.weight) };
+                  break;
+                }
+              }
+              return next;
+            });
+          }}
           className="flex items-center gap-1.5 text-xs text-amber-400/80 hover:text-amber-300 transition-colors px-1"
         >
           <TrendingUp className="h-3 w-3" />
@@ -295,13 +348,15 @@ export function SetLogger({
         </button>
       )}
 
-      {/* Add button */}
+      {/* Add more rows button */}
       <button
-        onClick={handleAddSet}
-        disabled={isPending || !reps}
-        className="w-full rounded-lg border border-dashed border-border py-2 text-sm text-muted-foreground hover:border-amber-500/30 hover:text-amber-400 disabled:opacity-40 transition-colors"
+        onClick={() => {
+          setRows((prev) => [...prev, emptyRow(prev.length + 1)]);
+        }}
+        className="w-full rounded-lg border border-dashed border-border py-1.5 text-xs text-muted-foreground hover:border-amber-500/30 hover:text-amber-400 transition-colors"
       >
-        + Dodaj serię {lastWeight ? `(ostatnio: ${lastWeight}kg)` : ""}
+        <Plus className="h-3 w-3 inline mr-1" />
+        Dodaj serię {lastWeight && actualSetCount === 0 ? `(ostatnio: ${lastWeight}kg)` : ""}
       </button>
     </div>
   );
