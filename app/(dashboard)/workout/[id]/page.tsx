@@ -144,12 +144,15 @@ export default async function WorkoutDetailPage({
               {sets.map((set) => (
                 <div
                   key={set.id}
-                  className={`grid grid-cols-4 gap-2 py-1.5 text-sm ${
-                    set.isPR ? "text-amber-400" : ""
+                  className={`grid grid-cols-4 gap-2 py-1.5 text-sm rounded-sm px-1 ${
+                    set.isPR ? "text-amber-400 bg-amber-500/5" : ""
+                  } ${
+                    set.isWarmup && !set.isPR ? "text-orange-400/60 bg-orange-500/5" : ""
                   }`}
                 >
                   <span className="flex items-center gap-1">
                     {set.isPR && <Flame className="h-3 w-3" />}
+                    {set.isWarmup && !set.isPR && "🧪 "}
                     #{set.setNumber}
                   </span>
                   <span className="text-center tabular-nums">

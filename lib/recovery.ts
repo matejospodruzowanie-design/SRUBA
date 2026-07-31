@@ -26,6 +26,7 @@ export async function getMuscleRecovery(
 
   const sets = await prisma.workoutSet.findMany({
     where: {
+      isWarmup: false,
       workout: { userId, isActive: false },
       completedAt: { gte: since },
     },

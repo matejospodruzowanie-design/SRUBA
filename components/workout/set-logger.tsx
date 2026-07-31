@@ -145,18 +145,9 @@ export function SetLogger({
 
     const weightNum = row.weight ? parseFloat(row.weight) : undefined;
 
-    // Clear this row immediately (before await) so user can keep typing in next row
-    setRows((prev) => {
-      const next = prev.map((r, i) => {
-        if (i === index) return emptyRow(i + 1);
-        return r;
-      });
-      return next;
-    });
-
     startTransition(async () => {
       try {
-        // Add optimistic set
+        // Add optimistic set (before clearing row, so data isn't lost on error)
         addOptimisticSet({
           id: "optimistic-" + Date.now() + "-" + index,
           workoutId,
@@ -184,6 +175,15 @@ export function SetLogger({
           toast.error(result.error);
           return;
         }
+
+        // Clear this row only after successful server save
+        setRows((prev) => {
+          const next = prev.map((r, i) => {
+            if (i === index) return emptyRow(i + 1);
+            return r;
+          });
+          return next;
+        });
 
         // Notify parent about the confirmed set (sync allSets)
         onSetConfirmed?.(result.set as unknown as SetWithExercise);

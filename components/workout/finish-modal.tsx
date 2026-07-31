@@ -4,16 +4,8 @@ import { useState } from "react";
 import { finishWorkout as finishWorkoutAction } from "@/app/(dashboard)/workout/actions";
 import { Trophy, Zap, Star, X } from "lucide-react";
 import { formatDuration } from "@/lib/fitness-utils";
+import { RANK_LABELS } from "@/lib/constants";
 import { toast } from "sonner";
-
-const RANK_LABELS: Record<string, string> = {
-  bronze: "Brąz",
-  silver: "Srebro",
-  gold: "Złoto",
-  platinum: "Platyna",
-  diamond: "Diament",
-  global_elite: "Global Elite",
-};
 
 interface FinishModalProps {
   workoutId: string;

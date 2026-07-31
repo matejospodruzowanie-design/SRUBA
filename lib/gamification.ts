@@ -68,7 +68,7 @@ export async function applyXp(
     sets: setCount * XP_PER_SET,
     workout: XP_PER_WORKOUT,
     prs: prCount * XP_PER_PR,
-    streak: streak * 10,
+    streak: Math.min(streak, 7) * 10, // cap streak bonus at 7 days (70 XP max)
     total: 0,
   };
   xpGain.total = xpGain.sets + xpGain.workout + xpGain.prs + xpGain.streak;
@@ -123,22 +123,24 @@ export async function checkAchievements(userId: string): Promise<string[]> {
     { code: "level_25", condition: user.level >= 25 },
   ];
 
-  const newAchievements: string[] = [];
-  for (const check of checks) {
-    if (check.condition && !unlockedCodes.has(check.code)) {
-      const achievement = await prisma.achievement.findUnique({
-        where: { code: check.code },
-      });
-      if (achievement) {
-        await prisma.userAchievement.create({
-          data: { userId, achievementId: achievement.id },
-        });
-        newAchievements.push(achievement.name);
-      }
-    }
+  // Batch-fetch all relevant achievements
+  const codesToCheck = checks
+    .filter((c) => c.condition && !unlockedCodes.has(c.code))
+    .map((c) => c.code);
+
+  if (codesToCheck.length === 0) return [];
+
+  const achievements = await prisma.achievement.findMany({
+    where: { code: { in: codesToCheck } },
+  });
+
+  if (achievements.length > 0) {
+    await prisma.userAchievement.createMany({
+      data: achievements.map((a) => ({ userId, achievementId: a.id })),
+    });
   }
 
-  return newAchievements;
+  return achievements.map((a) => a.name);
 }
 
 /**

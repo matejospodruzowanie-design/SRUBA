@@ -77,11 +77,27 @@ export default async function WorkoutPage({ searchParams }: Props) {
       const result = await startWorkoutFromPlan(planId);
 
       if ("conflict" in result && result.conflict) {
+        // Conflict detected — pass planId so the client can retry with forceDiscard
+        // We need to re-fetch the plan exercises to display them
+        const routine = await import("../plans/actions").then((m) =>
+          m.getRoutine(planId)
+        );
+        const planExercises = routine?.exercises.map((slot) => ({
+          id: slot.exercise.id,
+          name: slot.exercise.name,
+          equipment: slot.exercise.equipment,
+          muscles: slot.exercise.muscles,
+          targetSets: slot.targetSets,
+          targetReps: slot.targetReps,
+          restSeconds: slot.restSeconds,
+        })) ?? [];
+
         return (
           <ActiveWorkout
             initialWorkout={null}
-            initialExercises={[]}
+            initialExercises={planExercises}
             lastExercises={[]}
+            planId={planId}
           />
         );
       }

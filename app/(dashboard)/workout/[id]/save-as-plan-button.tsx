@@ -15,13 +15,17 @@ export function SaveAsPlanButton({ workoutId }: Props) {
 
   const handleSave = () => {
     startTransition(async () => {
-      const result = await saveWorkoutAsPlan(workoutId);
-      if (result?.error) {
-        toast.error(result.error);
-      } else {
-        setSaved(true);
-        toast.success("Zapisano jako plan!");
-        setTimeout(() => setSaved(false), 3000);
+      try {
+        const result = await saveWorkoutAsPlan(workoutId);
+        if (result?.error) {
+          toast.error(result.error);
+        } else {
+          setSaved(true);
+          toast.success("Zapisano jako plan!");
+          setTimeout(() => setSaved(false), 3000);
+        }
+      } catch {
+        toast.error("Nie udało się zapisać planu");
       }
     });
   };

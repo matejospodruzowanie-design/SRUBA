@@ -7,7 +7,7 @@ import { ExercisePicker } from "./exercise-picker";
 import { SetLogger } from "./set-logger";
 import { RestTimer } from "./rest-timer";
 import { FinishModal } from "./finish-modal";
-import { startWorkout, removeExerciseFromWorkout } from "@/app/(dashboard)/workout/actions";
+import { startWorkout, startWorkoutFromPlan, removeExerciseFromWorkout } from "@/app/(dashboard)/workout/actions";
 import { recommendedRest, formatTime } from "@/lib/fitness-utils";
 import { toast } from "sonner";
 
@@ -51,13 +51,14 @@ interface Props {
   } | null;
   initialExercises: PlanExercise[];
   lastExercises: { exerciseId: string; weightKg: number | null; reps: number }[];
+  planId?: string; // plan to start from (survives conflict resolution)
 }
 
-export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises }: Props) {
+export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises, planId }: Props) {
   const router = useRouter();
   const [workoutId, setWorkoutId] = useState<string | null>(initialWorkout?.id ?? null);
   const [workoutName, setWorkoutName] = useState(initialWorkout?.name ?? "");
-  const [startedAt] = useState<Date>(
+  const [startedAt, setStartedAt] = useState<Date>(
     initialWorkout?.startedAt ? new Date(initialWorkout.startedAt) : new Date()
   );
   const [exercises, setExercises] = useState<
@@ -81,6 +82,42 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
     setIsStarting(true);
     try {
       const name = workoutName.trim() || `Trening ${new Date().toLocaleDateString("pl-PL")}`;
+
+      // If starting from a plan, use the plan-specific action
+      if (planId) {
+        const result = await startWorkoutFromPlan(planId, forceDiscard);
+
+        if ("conflict" in result && result.conflict) {
+          const existing = result.existingWorkout;
+          if (confirm(`Masz aktywny trening "${existing.name}" z ${existing.setCount} seriami. Czy chcesz go usunąć i zacząć nowy?`)) {
+            const forced = await startWorkoutFromPlan(planId, true);
+            if ("workout" in forced && forced.workout) {
+              setWorkoutId(forced.workout.id);
+              setWorkoutName(forced.workout.name);
+              setStartedAt(new Date(forced.workout.startedAt));
+              setAllSets([]);
+              setExercises(forced.planExercises.map((e) => ({
+                id: e.id, name: e.name, equipment: e.equipment,
+                targetSets: e.targetSets, targetReps: e.targetReps, restSeconds: e.restSeconds,
+              })));
+            }
+          }
+          return;
+        }
+
+        if ("workout" in result && result.workout) {
+          setWorkoutId(result.workout.id);
+          setWorkoutName(result.workout.name);
+          setStartedAt(new Date(result.workout.startedAt));
+          setExercises(result.planExercises.map((e) => ({
+            id: e.id, name: e.name, equipment: e.equipment,
+            targetSets: e.targetSets, targetReps: e.targetReps, restSeconds: e.restSeconds,
+          })));
+        }
+        return;
+      }
+
+      // Starting from scratch
       const result = await startWorkout(name, workoutNotes || undefined, forceDiscard);
 
       if ("conflict" in result && result.conflict) {
@@ -90,6 +127,7 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
           if ("id" in forced) {
             setWorkoutId(forced.id);
             setWorkoutName(forced.name);
+            setStartedAt(new Date());
             setAllSets([]);
             setExercises([]);
           }
@@ -100,13 +138,14 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
       if ("id" in result) {
         setWorkoutId(result.id);
         setWorkoutName(result.name);
+        setStartedAt(new Date());
       }
     } catch {
       toast.error("Nie udało się rozpocząć treningu");
     } finally {
       setIsStarting(false);
     }
-  }, [workoutName, workoutNotes, isStarting]);
+  }, [workoutName, workoutNotes, isStarting, planId]);
 
   // ─── Elapsed timer ───
   useEffect(() => {
@@ -145,14 +184,14 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
   // ─── Set confirmed (after server save) → update allSets ───
   const handleSetConfirmed = useCallback((confirmedSet: SetWithExercise) => {
     setAllSets((prev) => {
-      // Replace optimistic entry if exists, otherwise append
-      const hasOptimistic = prev.some((s) => s.id.startsWith("optimistic") && s.exerciseId === confirmedSet.exerciseId && s.id.includes(confirmedSet.setNumber.toString()));
-      if (hasOptimistic) {
-        return prev.map((s) =>
-          (s.id.startsWith("optimistic") && s.exerciseId === confirmedSet.exerciseId && s.id.includes(confirmedSet.setNumber.toString()))
-            ? confirmedSet
-            : s
-        );
+      // Replace the first optimistic entry for this exercise (ordered by appearance)
+      const optimisticIdx = prev.findIndex(
+        (s) => s.id.startsWith("optimistic") && s.exerciseId === confirmedSet.exerciseId
+      );
+      if (optimisticIdx >= 0) {
+        const next = [...prev];
+        next[optimisticIdx] = confirmedSet;
+        return next;
       }
       return [...prev, confirmedSet];
     });
@@ -173,11 +212,19 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
   }, []);
 
   // ─── Set added → show rest timer ───
+  const PR_TYPE_LABELS: Record<string, string> = {
+    weight: "Ciężar",
+    est1rm: "Est. 1RM",
+    volume: "Objętość",
+    reps: "Powtórzenia",
+  };
   const handleSetAdded = (exerciseId: string, exerciseName: string, equipment: string | null, prs: unknown[], setRpe?: number) => {
     if (prs.length > 0) {
       prs.forEach((pr: unknown) => {
         const p = pr as { exerciseName: string; type: string; newValue: number };
-        toast.success(`🔥 Nowy rekord: ${p.exerciseName} — ${p.type}: ${p.newValue}!`);
+        const typeLabel = PR_TYPE_LABELS[p.type] || p.type;
+        const valueStr = p.type === "volume" ? `${Math.round(p.newValue)} kg` : `${p.newValue}`;
+        toast.success(`🔥 Nowy rekord: ${p.exerciseName} — ${typeLabel}: ${valueStr}!`);
       });
     }
     // Auto-start rest timer with recommended rest (using actual RPE from the set)
@@ -223,7 +270,7 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises 
           </div>
           <div className="flex gap-2 flex-wrap">
             {["Push", "Pull", "Nogi", "Full Body", "Upper", "Lower"].map((name) => (
-              <button key={name} onClick={() => setWorkoutName(name)}
+              <button key={name} onClick={() => { if (!workoutName.trim()) setWorkoutName(name); }}
                 className="rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground hover:border-amber-500/30 hover:text-amber-400 transition-colors">
                 {name}
               </button>

@@ -19,7 +19,11 @@ export function DeleteWorkoutButton({ workoutId }: Props) {
 
     startTransition(async () => {
       try {
-        await deleteWorkout(workoutId);
+        const result = await deleteWorkout(workoutId);
+        if (result && "error" in result) {
+          toast.error(result.error);
+          return;
+        }
         toast.success("Trening usunięty");
         router.push("/history");
         router.refresh();

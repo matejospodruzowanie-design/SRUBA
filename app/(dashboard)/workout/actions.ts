@@ -69,7 +69,7 @@ export async function startWorkout(name: string, notes?: string, forceDiscard = 
 const addSetSchema = z.object({
   workoutId: z.string().min(1),
   exerciseId: z.string().min(1),
-  weightKg: z.number().positive().optional(),
+  weightKg: z.number().min(0).optional(),
   reps: z.number().int().min(1).max(999),
   rpe: z.number().min(0).max(10).optional(),
   targetReps: z.string().optional(),
@@ -127,28 +127,33 @@ export async function addSet(input: AddSetInput) {
     include: { exercise: true },
   });
 
-  // Check for PRs
-  const prs = await checkSetPrs(
-    user.id,
-    input.exerciseId,
-    exercise?.name ?? "Nieznane ćwiczenie",
-    input.weightKg ?? null,
-    input.reps,
-    workout.id
-  );
+  // Check for PRs (skip for warmup sets)
+  const isWarmup = input.isWarmup ?? false;
+  let prs: Awaited<ReturnType<typeof checkSetPrs>> = [];
+  if (!isWarmup) {
+    prs = await checkSetPrs(
+      user.id,
+      input.exerciseId,
+      exercise?.name ?? "Nieznane ćwiczenie",
+      input.weightKg ?? null,
+      input.reps,
+      workout.id
+    );
 
-  if (prs.length > 0) {
-    // Mark set as PR
-    await prisma.workoutSet.update({
-      where: { id: workoutSet.id },
-      data: { isPR: true },
-    });
+    if (prs.length > 0) {
+      // Mark set as PR
+      await prisma.workoutSet.update({
+        where: { id: workoutSet.id },
+        data: { isPR: true },
+      });
+    }
   }
 
-  // Calculate auto-progression suggestion
+  // Calculate auto-progression suggestion (exclude warmup sets)
   const recentSets = await prisma.workoutSet.findMany({
     where: {
       exerciseId: input.exerciseId,
+      isWarmup: false,
       workout: { userId: user.id, isActive: false },
     },
     orderBy: { completedAt: "desc" },
@@ -312,6 +317,7 @@ export async function getLastSets(exerciseId: string, limit = 5) {
   const sets = await prisma.workoutSet.findMany({
     where: {
       exerciseId,
+      isWarmup: false,
       workout: { userId: user.id, isActive: false },
     },
     orderBy: { completedAt: "desc" },
@@ -369,45 +375,36 @@ export async function finishWorkout(workoutId: string) {
   if (!workout) return { error: "Trening już zakończony lub nie istnieje" };
 
   // Guard: don't finish empty workouts — delete them instead
-  const realSets = workout.sets.filter((s) => s.id && !s.id.startsWith("optimistic"));
-  if (realSets.length === 0) {
+  if (workout.sets.length === 0) {
     await prisma.workout.delete({ where: { id: workoutId } });
     revalidatePath("/workout");
     revalidatePath("/dashboard");
     return { error: "Trening bez serii został usunięty" };
   }
 
-  // Atomically mark workout as inactive to prevent double-finish
-  const updated = await prisma.workout.updateMany({
-    where: { id: workoutId, isActive: true },
-    data: { isActive: false },
-  });
-  if (updated.count === 0) {
-    return { error: "Trening już zakończony" };
-  }
-
   const endedAt = new Date();
 
-  // Count unique PRs from this workout
-  const prCount = workout.sets.filter((s) => s.isPR).length;
+  // Count PRs from non-warmup sets
+  const prCount = workout.sets.filter((s) => s.isPR && !s.isWarmup).length;
 
-  // Update endedAt and duration
-  await prisma.workout.update({
-    where: { id: workoutId },
+  // Perform all side effects FIRST: if any fail, the workout stays active (retryable).
+  // The isActive=false update comes LAST — only after everything succeeds.
+  const newStreak = await updateStreak(user.id);
+  const xpResult = await applyXp(user.id, workout.sets.length, prCount, newStreak);
+  const newAchievements = await checkAchievements(user.id);
+
+  // Atomically mark workout as inactive (LAST — after all side effects succeed)
+  const updated = await prisma.workout.updateMany({
+    where: { id: workoutId, isActive: true },
     data: {
+      isActive: false,
       endedAt,
       durationSeconds: workoutDuration(workout.startedAt, endedAt),
     },
   });
-
-  // Update streak
-  const newStreak = await updateStreak(user.id);
-
-  // Apply XP
-  const xpResult = await applyXp(user.id, workout.sets.length, prCount, newStreak);
-
-  // Check achievements
-  const newAchievements = await checkAchievements(user.id);
+  if (updated.count === 0) {
+    return { error: "Trening już zakończony" };
+  }
 
   revalidatePath("/workout");
   revalidatePath("/dashboard");
