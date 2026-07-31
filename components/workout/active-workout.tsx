@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, memo } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Flag, Dumbbell, Target, X } from "lucide-react";
 import { ExercisePicker } from "./exercise-picker";
@@ -54,6 +54,23 @@ interface Props {
   planId?: string; // plan to start from (survives conflict resolution)
 }
 
+// ─── Elapsed timer (memoized — isolated from parent re-renders) ───
+
+const ElapsedTimer = memo(function ElapsedTimer({ startedAt }: { startedAt: Date }) {
+  const [elapsed, setElapsed] = useState(() =>
+    Math.round((Date.now() - new Date(startedAt).getTime()) / 1000)
+  );
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setElapsed(Math.round((Date.now() - new Date(startedAt).getTime()) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [startedAt]);
+
+  return <span>⏱ {formatTime(elapsed)}</span>;
+});
+
 export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises, planId }: Props) {
   const router = useRouter();
   const [workoutId, setWorkoutId] = useState<string | null>(initialWorkout?.id ?? null);
@@ -71,9 +88,10 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises,
   const [pickerOpen, setPickerOpen] = useState(false);
   const [showRestTimer, setShowRestTimer] = useState(false);
   const [restSeconds, setRestSeconds] = useState(initialExercises[0]?.restSeconds ?? 90);
+  const [nextExerciseName, setNextExerciseName] = useState<string | null>(null);
+  const [restTimerExiting, setRestTimerExiting] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [workoutNotes, setWorkoutNotes] = useState("");
-  const [elapsed, setElapsed] = useState(0);
   const [isStarting, setIsStarting] = useState(false);
 
   // ─── Start workout ───
@@ -147,13 +165,16 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises,
     }
   }, [workoutName, workoutNotes, isStarting, planId]);
 
-  // ─── Elapsed timer ───
+  // ─── Warn before leaving active workout ───
   useEffect(() => {
-    const interval = setInterval(() => {
-      setElapsed(Math.round((Date.now() - new Date(startedAt).getTime()) / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [startedAt]);
+    if (!workoutId) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = ""; // Chrome requires this for the prompt
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [workoutId]);
 
   // ─── Volume (kg) ───
   const totalVolume = allSets
@@ -230,10 +251,31 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises,
     // Auto-start rest timer with recommended rest (using actual RPE from the set)
     const rest = recommendedRest(exerciseName, equipment, setRpe ?? null);
     setRestSeconds(rest);
+    // Compute next exercise for rest timer context
+    const currentIdx = exercises.findIndex((e) => e.id === exerciseId);
+    const next = currentIdx >= 0 && currentIdx < exercises.length - 1 ? exercises[currentIdx + 1] : null;
+    setNextExerciseName(next?.name ?? null);
     setShowRestTimer(true);
   };
 
-  const handleSkipRest = () => setShowRestTimer(false);
+  const handleSkipRest = () => {
+    if (restTimerExiting) return;
+    setRestTimerExiting(true);
+    setTimeout(() => {
+      setShowRestTimer(false);
+      setRestTimerExiting(false);
+    }, 200);
+  };
+
+  const handleRestComplete = () => {
+    if (restTimerExiting) return;
+    setRestTimerExiting(true);
+    setTimeout(() => {
+      setShowRestTimer(false);
+      setRestTimerExiting(false);
+    }, 200);
+  };
+
   const handleFinish = () => setShowFinishModal(true);
 
   // Called when the user confirms finish (finish successful)
@@ -300,7 +342,7 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises,
           <div>
             <h1 className="text-lg font-bold">{workoutName}</h1>
             <p className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
-              <span>⏱ {formatTime(elapsed)}</span>
+              <ElapsedTimer startedAt={startedAt} />
               <span>·</span>
               <span>{exercises.length} ćw.</span>
               <span>·</span>
@@ -374,6 +416,7 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises,
                     onClick={() => handleRemoveExercise(exercise.id, exercise.name)}
                     className="text-muted-foreground/30 hover:text-red-400 transition-colors p-1 flex-shrink-0 ml-1"
                     title="Usuń ćwiczenie z treningu"
+                    aria-label={`Usuń ${exercise.name} z treningu`}
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -407,11 +450,14 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises,
 
       {/* Rest timer — bottom sheet, persists on exercise switch */}
       {showRestTimer && (
-        <div className="fixed bottom-20 left-4 right-4 z-40 lg:left-auto lg:right-4 lg:bottom-4 lg:w-80">
+        <div className={`fixed bottom-20 left-4 right-4 z-40 lg:left-auto lg:right-4 lg:bottom-4 lg:w-80 transition-all duration-200 ${
+          restTimerExiting ? "opacity-0 translate-y-4 scale-95" : "animate-slide-up"
+        }`}>
           <RestTimer
             defaultSeconds={restSeconds}
-            onComplete={() => setShowRestTimer(false)}
+            onComplete={handleRestComplete}
             onSkip={handleSkipRest}
+            nextExerciseName={nextExerciseName}
           />
         </div>
       )}

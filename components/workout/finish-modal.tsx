@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { finishWorkout as finishWorkoutAction } from "@/app/(dashboard)/workout/actions";
-import { Trophy, Zap, Star, X } from "lucide-react";
+import { Trophy, Zap, Star, X, Loader2 } from "lucide-react";
 import { formatDuration } from "@/lib/fitness-utils";
 import { RANK_LABELS } from "@/lib/constants";
 import { toast } from "sonner";
@@ -54,7 +54,7 @@ export function FinishModal({ workoutId, setCount, onClose, onFinished }: Finish
   if (!result) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+        <div className="absolute inset-0 bg-black/60" onClick={loading ? undefined : onClose} />
         <div className="relative w-full max-w-sm bg-card border border-border rounded-2xl p-6 space-y-6">
           <div className="text-center space-y-2">
             <Trophy className="h-10 w-10 text-amber-400 mx-auto" />
@@ -68,7 +68,8 @@ export function FinishModal({ workoutId, setCount, onClose, onFinished }: Finish
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="flex-1 rounded-lg border border-border py-2.5 text-sm font-medium hover:bg-border/20 transition-colors"
+              disabled={loading}
+              className="flex-1 rounded-lg border border-border py-2.5 text-sm font-medium hover:bg-border/20 transition-colors disabled:opacity-50"
             >
               Jeszcze nie
             </button>
@@ -77,7 +78,13 @@ export function FinishModal({ workoutId, setCount, onClose, onFinished }: Finish
               disabled={loading}
               className="flex-1 rounded-lg bg-amber-500 py-2.5 text-sm font-semibold text-black hover:bg-amber-400 disabled:opacity-50 transition-colors"
             >
-              {loading ? "Zapisywanie..." : "Zakończ"}
+              {loading ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Zapisywanie...
+                </span>
+              ) : (
+                "Zakończ"
+              )}
             </button>
           </div>
         </div>
@@ -91,7 +98,7 @@ export function FinishModal({ workoutId, setCount, onClose, onFinished }: Finish
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60" />
       <div className="relative w-full max-w-sm bg-card border border-border rounded-2xl p-6 space-y-5 max-h-[85vh] overflow-y-auto">
-        <button onClick={onFinished} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
+        <button onClick={onFinished} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground" aria-label="Zamknij podsumowanie">
           <X className="h-5 w-5" />
         </button>
 

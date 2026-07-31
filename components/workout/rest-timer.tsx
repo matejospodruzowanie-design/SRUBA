@@ -8,9 +8,10 @@ interface RestTimerProps {
   defaultSeconds: number;
   onComplete?: () => void;
   onSkip?: () => void;
+  nextExerciseName?: string | null;
 }
 
-export function RestTimer({ defaultSeconds, onComplete, onSkip }: RestTimerProps) {
+export function RestTimer({ defaultSeconds, onComplete, onSkip, nextExerciseName }: RestTimerProps) {
   const [targetTime, setTargetTime] = useState<number>(Date.now() + defaultSeconds * 1000);
   const [remaining, setRemaining] = useState(defaultSeconds);
   const [isRunning, setIsRunning] = useState(true);
@@ -105,6 +106,7 @@ export function RestTimer({ defaultSeconds, onComplete, onSkip }: RestTimerProps
         <button
           onClick={() => setSoundEnabled(!soundEnabled)}
           className="text-muted-foreground hover:text-foreground transition-colors"
+          aria-label={soundEnabled ? "Wycisz dźwięk" : "Włącz dźwięk"}
         >
           {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
         </button>
@@ -136,6 +138,13 @@ export function RestTimer({ defaultSeconds, onComplete, onSkip }: RestTimerProps
         </span>
       </div>
 
+      {/* Next exercise hint */}
+      {nextExerciseName && (
+        <p className="text-xs text-muted-foreground text-center">
+          Następne: <span className="text-foreground font-medium">{nextExerciseName}</span>
+        </p>
+      )}
+
       {/* Controls */}
       <div className="flex items-center justify-center gap-3">
         <button
@@ -148,6 +157,7 @@ export function RestTimer({ defaultSeconds, onComplete, onSkip }: RestTimerProps
         <button
           onClick={toggleTimer}
           className="h-10 w-10 rounded-full bg-amber-500 text-black flex items-center justify-center hover:bg-amber-400 transition-colors"
+          aria-label={isRunning ? "Pauza" : "Wznów odliczanie"}
         >
           {isRunning ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 ml-0.5" />}
         </button>

@@ -21,6 +21,85 @@ interface Props {
   workoutExerciseIds: string[];
 }
 
+// ─── Shared sub-components ───
+
+function ExerciseImage({ videoUrl, primaryMuscle, size }: {
+  videoUrl: string | null;
+  primaryMuscle: string | undefined;
+  size: "sm" | "lg";
+}) {
+  const image = getExerciseImage(videoUrl, primaryMuscle);
+  const containerClasses = size === "sm"
+    ? "h-12 w-full rounded-lg"
+    : "h-12 w-16 rounded-md flex-shrink-0";
+
+  return (
+    <div className={`${containerClasses} bg-zinc-900 overflow-hidden flex items-center justify-center`}>
+      {image.type === "youtube" ? (
+        <img src={image.src} alt="" className="h-full w-full object-cover" loading="lazy" />
+      ) : image.type === "emoji" ? (
+        <span className={size === "sm" ? "text-xl" : "text-xl"}>{image.emoji}</span>
+      ) : (
+        <span className={size === "sm" ? "text-muted-foreground/40" : "text-muted-foreground/40 text-lg"}>🏋️</span>
+      )}
+    </div>
+  );
+}
+
+function ExerciseCard({ exercise, alreadyInWorkout, onClick, variant }: {
+  exercise: Exercise;
+  alreadyInWorkout: boolean;
+  onClick: () => void;
+  variant: "compact" | "horizontal";
+}) {
+  const primaryMuscle = exercise.muscles.find((m) => m.isPrimary)?.muscleGroup;
+  const muscleLabels = exercise.muscles
+    .filter((m) => m.isPrimary)
+    .map((m) => MUSCLE_GROUPS.find((mg) => mg.id === m.muscleGroup)?.label)
+    .filter(Boolean)
+    .join(", ");
+
+  if (variant === "compact") {
+    return (
+      <button
+        onClick={onClick}
+        disabled={alreadyInWorkout}
+        className={`flex-shrink-0 w-20 rounded-xl border p-2 text-center transition-colors ${
+          alreadyInWorkout
+            ? "border-zinc-800 opacity-40 cursor-not-allowed"
+            : "border-border hover:border-amber-500/30 hover:bg-amber-500/5"
+        }`}
+      >
+        <div className="mb-1.5">
+          <ExerciseImage videoUrl={exercise.videoUrl} primaryMuscle={primaryMuscle} size="sm" />
+        </div>
+        <p className="text-[11px] leading-tight line-clamp-2">{exercise.name}</p>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={alreadyInWorkout}
+      className={`w-full text-left rounded-lg p-2.5 transition-colors flex items-center gap-3 ${
+        alreadyInWorkout ? "opacity-40 cursor-not-allowed" : "hover:bg-amber-500/10"
+      }`}
+    >
+      <ExerciseImage videoUrl={exercise.videoUrl} primaryMuscle={primaryMuscle} size="lg" />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium truncate">
+          {exercise.name}
+          {alreadyInWorkout && " (już dodane)"}
+        </p>
+        <p className="text-xs text-muted-foreground mt-0.5 truncate">
+          {muscleLabels}
+        </p>
+      </div>
+    </button>
+  );
+}
+
 export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: Props) {
   const [query, setQuery] = useState("");
   const [muscle, setMuscle] = useState<string | null>(null);
@@ -108,7 +187,7 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h2 className="font-semibold">Dodaj ćwiczenie</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground" aria-label="Zamknij wybór ćwiczeń">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -160,33 +239,15 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
                 <Clock className="h-3 w-3" /> Ostatnio używane
               </p>
               <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-                {recentExercises.slice(0, 8).map((ex) => {
-                  const alreadyInWorkout = workoutExerciseIds.includes(ex.id);
-                  const image = getExerciseImage(ex.videoUrl, ex.muscles.find((m) => m.isPrimary)?.muscleGroup);
-                  return (
-                    <button
-                      key={ex.id}
-                      onClick={() => { if (!alreadyInWorkout) onSelect(ex); }}
-                      disabled={alreadyInWorkout}
-                      className={`flex-shrink-0 w-20 rounded-xl border p-2 text-center transition-colors ${
-                        alreadyInWorkout
-                          ? "border-zinc-800 opacity-40 cursor-not-allowed"
-                          : "border-border hover:border-amber-500/30 hover:bg-amber-500/5"
-                      }`}
-                    >
-                      <div className="h-12 w-full rounded-lg bg-zinc-900 overflow-hidden flex items-center justify-center mb-1.5">
-                        {image.type === "youtube" ? (
-                          <img src={image.src} alt="" className="h-full w-full object-cover" loading="lazy" />
-                        ) : image.type === "emoji" ? (
-                          <span className="text-xl">{image.emoji}</span>
-                        ) : (
-                          <span className="text-muted-foreground/40">🏋️</span>
-                        )}
-                      </div>
-                      <p className="text-[11px] leading-tight line-clamp-2">{ex.name}</p>
-                    </button>
-                  );
-                })}
+                {recentExercises.slice(0, 8).map((ex) => (
+                  <ExerciseCard
+                    key={ex.id}
+                    exercise={ex}
+                    alreadyInWorkout={workoutExerciseIds.includes(ex.id)}
+                    onClick={() => onSelect(ex)}
+                    variant="compact"
+                  />
+                ))}
               </div>
             </div>
           )}
@@ -209,43 +270,15 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
                 </p>
               ) : (
                 <div className="space-y-1">
-                  {dedupedExercises.map((ex) => {
-                  const alreadyInWorkout = workoutExerciseIds.includes(ex.id);
-                  const image = getExerciseImage(ex.videoUrl, ex.muscles.find((m) => m.isPrimary)?.muscleGroup);
-                  return (
-                    <button
+                  {dedupedExercises.map((ex) => (
+                    <ExerciseCard
                       key={ex.id}
-                      onClick={() => { if (!alreadyInWorkout) onSelect(ex); }}
-                      disabled={alreadyInWorkout}
-                      className={`w-full text-left rounded-lg p-2.5 transition-colors flex items-center gap-3 ${
-                        alreadyInWorkout ? "opacity-40 cursor-not-allowed" : "hover:bg-amber-500/10"
-                      }`}
-                    >
-                      <div className="h-12 w-16 rounded-md bg-zinc-900 flex-shrink-0 overflow-hidden flex items-center justify-center">
-                        {image.type === "youtube" ? (
-                          <img src={image.src} alt="" className="h-full w-full object-cover" loading="lazy" />
-                        ) : image.type === "emoji" ? (
-                          <span className="text-xl">{image.emoji}</span>
-                        ) : (
-                          <span className="text-muted-foreground/40 text-lg">🏋️</span>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">
-                          {ex.name}
-                          {alreadyInWorkout && " (już dodane)"}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                          {ex.muscles
-                            .filter((m) => m.isPrimary)
-                            .map((m) => MUSCLE_GROUPS.find((mg) => mg.id === m.muscleGroup)?.label)
-                            .filter(Boolean)
-                            .join(", ")}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
+                      exercise={ex}
+                      alreadyInWorkout={workoutExerciseIds.includes(ex.id)}
+                      onClick={() => onSelect(ex)}
+                      variant="horizontal"
+                    />
+                  ))}
               </div>
             )}
             </div>
@@ -255,43 +288,15 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
             </p>
           ) : (
             <div className="space-y-1">
-              {exercises.map((ex) => {
-                const alreadyInWorkout = workoutExerciseIds.includes(ex.id);
-                const image = getExerciseImage(ex.videoUrl, ex.muscles.find((m) => m.isPrimary)?.muscleGroup);
-                return (
-                  <button
-                    key={ex.id}
-                    onClick={() => { if (!alreadyInWorkout) onSelect(ex); }}
-                    disabled={alreadyInWorkout}
-                    className={`w-full text-left rounded-lg p-2.5 transition-colors flex items-center gap-3 ${
-                      alreadyInWorkout ? "opacity-40 cursor-not-allowed" : "hover:bg-amber-500/10"
-                    }`}
-                  >
-                    <div className="h-12 w-16 rounded-md bg-zinc-900 flex-shrink-0 overflow-hidden flex items-center justify-center">
-                      {image.type === "youtube" ? (
-                        <img src={image.src} alt="" className="h-full w-full object-cover" loading="lazy" />
-                      ) : image.type === "emoji" ? (
-                        <span className="text-xl">{image.emoji}</span>
-                      ) : (
-                        <span className="text-muted-foreground/40 text-lg">🏋️</span>
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">
-                        {ex.name}
-                        {alreadyInWorkout && " (już dodane)"}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                        {ex.muscles
-                          .filter((m) => m.isPrimary)
-                          .map((m) => MUSCLE_GROUPS.find((mg) => mg.id === m.muscleGroup)?.label)
-                          .filter(Boolean)
-                          .join(", ")}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
+              {exercises.map((ex) => (
+                <ExerciseCard
+                  key={ex.id}
+                  exercise={ex}
+                  alreadyInWorkout={workoutExerciseIds.includes(ex.id)}
+                  onClick={() => onSelect(ex)}
+                  variant="horizontal"
+                />
+              ))}
             </div>
           )}
         </div>

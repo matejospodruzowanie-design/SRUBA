@@ -69,6 +69,8 @@ export function SetLogger({
   const [lastLoggedSetId, setLastLoggedSetId] = useState<string | null>(null);
   const [undoCountdown, setUndoCountdown] = useState(0);
   const [plateCalcIndex, setPlateCalcIndex] = useState<number | null>(null);
+  // Track optimistic IDs that were rejected by the server — filter them from display
+  const [rejectedIds, setRejectedIds] = useState<Set<string>>(new Set());
 
   // Inline edit state (for editing already-logged sets)
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
@@ -90,8 +92,33 @@ export function SetLogger({
     (state: SetWithExercise[], newSet: SetWithExercise) => [...state, newSet]
   );
 
-  const exerciseSets = optimisticSets.filter((s) => s.exerciseId === exerciseId);
+  const exerciseSets = optimisticSets.filter((s) => s.exerciseId === exerciseId && !rejectedIds.has(s.id));
   const actualSetCount = exerciseSets.filter((s) => !s.id.startsWith("optimistic")).length;
+
+  // Clear rejected IDs when real sets change (parent synced new state)
+  useEffect(() => {
+    if (rejectedIds.size > 0) setRejectedIds(new Set());
+  }, [sets.length]);
+
+  // Auto-fill first empty row with last known weight/reps for faster logging
+  useEffect(() => {
+    if (!lastWeight || !lastReps) return;
+    // Only auto-fill when the first row is completely empty
+    // and there are no logged sets yet (first time seeing this exercise)
+    if (actualSetCount > 0) return;
+    const firstEmpty = rows.findIndex((r) => !r.weight && !r.reps);
+    if (firstEmpty < 0) return;
+    setRows((prev) => {
+      const next = [...prev];
+      next[firstEmpty] = {
+        ...next[firstEmpty],
+        weight: String(lastWeight),
+        reps: String(lastReps),
+      };
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exerciseId]);
 
   // Auto-focus first empty weight field after logging
   useEffect(() => {
@@ -146,10 +173,13 @@ export function SetLogger({
     const weightNum = row.weight ? parseFloat(row.weight) : undefined;
 
     startTransition(async () => {
+      // Build optimistic ID upfront so we can roll back on error in both try and catch
+      const optimisticId = "optimistic-" + Date.now() + "-" + index;
+
       try {
         // Add optimistic set (before clearing row, so data isn't lost on error)
         addOptimisticSet({
-          id: "optimistic-" + Date.now() + "-" + index,
+          id: optimisticId,
           workoutId,
           exerciseId,
           exercise: { id: exerciseId, name: exerciseName } as ExerciseLite,
@@ -173,6 +203,8 @@ export function SetLogger({
 
         if ("error" in result) {
           toast.error(result.error);
+          // Roll back optimistic set — server rejected it
+          setRejectedIds((prev) => new Set(prev).add(optimisticId));
           return;
         }
 
@@ -204,6 +236,8 @@ export function SetLogger({
         setUndoCountdown(5);
       } catch {
         toast.error("Nie udało się zapisać serii");
+        // Roll back optimistic set on thrown exception
+        setRejectedIds((prev) => new Set(prev).add(optimisticId));
       }
     });
   };
@@ -336,7 +370,7 @@ export function SetLogger({
                   className="w-full rounded border border-amber-500/30 bg-card px-1 py-1 text-sm text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50"
                 />
                 <div className="flex items-center justify-center gap-0.5">
-                  <button onClick={handleSaveEdit} disabled={isEditingPending} className="text-green-400 hover:text-green-300 disabled:opacity-50">
+                  <button onClick={handleSaveEdit} disabled={isEditingPending} className="text-green-400 hover:text-green-300 disabled:opacity-50" aria-label="Zapisz zmiany">
                     <Check className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -368,6 +402,7 @@ export function SetLogger({
                     <button
                       onClick={() => handleDelete(set.id)}
                       className="text-muted-foreground/30 hover:text-red-400 transition-colors"
+                      aria-label={`Usuń serię ${set.setNumber}`}
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -397,6 +432,7 @@ export function SetLogger({
                 : "text-muted-foreground/20 hover:text-muted-foreground/60"
             }`}
             title={row.warmup ? "Seria rozgrzewkowa" : "Oznacz jako rozgrzewkową"}
+            aria-label={row.warmup ? "Seria rozgrzewkowa (włączona)" : "Oznacz jako rozgrzewkową"}
           >
             <Thermometer className="h-3.5 w-3.5" />
           </button>
@@ -464,6 +500,7 @@ export function SetLogger({
           <button
             onClick={handleUndo}
             className="flex items-center gap-1 text-amber-400 hover:text-amber-300 font-medium text-xs transition-colors"
+            aria-label="Cofnij ostatnią serię"
           >
             <Undo2 className="h-3.5 w-3.5" /> Cofnij
           </button>

@@ -144,6 +144,38 @@ export async function checkAchievements(userId: string): Promise<string[]> {
 }
 
 /**
+ * Predict what the streak will be after finishing a workout today,
+ * WITHOUT writing to the database. Used to calculate XP bonuses
+ * before all side effects are confirmed.
+ */
+export async function predictStreak(userId: string): Promise<number> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return 0;
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+
+  let newStreak = 1;
+  if (user.lastWorkoutAt) {
+    const lastDate = new Date(
+      user.lastWorkoutAt.getFullYear(),
+      user.lastWorkoutAt.getMonth(),
+      user.lastWorkoutAt.getDate()
+    );
+
+    if (lastDate.getTime() === today.getTime()) {
+      newStreak = user.streak; // already worked out today
+    } else if (lastDate.getTime() === yesterday.getTime()) {
+      newStreak = user.streak + 1; // consecutive day
+    }
+    // else: more than 1 day gap — reset to 1
+  }
+
+  return newStreak;
+}
+
+/**
  * Update streak: if last workout was yesterday, increment; if today, keep; otherwise reset.
  */
 export async function updateStreak(userId: string): Promise<number> {

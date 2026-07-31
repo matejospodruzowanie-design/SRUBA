@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { getUser } from "@/lib/session";
 import { checkSetPrs } from "@/lib/prs";
-import { applyXp, checkAchievements, updateStreak } from "@/lib/gamification";
+import { applyXp, checkAchievements, updateStreak, predictStreak } from "@/lib/gamification";
 import { workoutDuration, nextWeightSuggestion } from "@/lib/fitness-utils";
 import { z } from "zod";
 
@@ -184,7 +184,7 @@ export async function addSet(input: AddSetInput) {
 // ─── Update set ───
 
 const updateSetSchema = z.object({
-  weightKg: z.number().positive().nullable().optional(),
+  weightKg: z.number().min(0).nullable().optional(),
   reps: z.number().int().min(1).max(999).optional(),
   rpe: z.number().min(0).max(10).nullable().optional(),
 });
@@ -388,10 +388,15 @@ export async function finishWorkout(workoutId: string) {
   const prCount = workout.sets.filter((s) => s.isPR && !s.isWarmup).length;
 
   // Perform all side effects FIRST: if any fail, the workout stays active (retryable).
-  // The isActive=false update comes LAST — only after everything succeeds.
-  const newStreak = await updateStreak(user.id);
-  const xpResult = await applyXp(user.id, workout.sets.length, prCount, newStreak);
+  // Order matters: XP and achievements are idempotent-safe but streak
+  // mutates state (reads current → writes new), so it goes LAST before isActive.
+  //
+  // Predict streak for XP bonus calculation without writing to DB yet
+  const predictedStreak = await predictStreak(user.id);
+  const xpResult = await applyXp(user.id, workout.sets.length, prCount, predictedStreak);
   const newAchievements = await checkAchievements(user.id);
+  // Only now persist streak — after XP and achievements succeeded
+  const updatedStreak = await updateStreak(user.id);
 
   // Atomically mark workout as inactive (LAST — after all side effects succeed)
   const updated = await prisma.workout.updateMany({
