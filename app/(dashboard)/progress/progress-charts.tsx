@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import {
   BarChart,
   Bar,
@@ -27,8 +27,10 @@ import {
 import { MUSCLE_GROUPS } from "@/lib/constants";
 import { format } from "date-fns";
 import { deleteBodyMeasurement } from "./actions";
+import { getExerciseProgress } from "./exercise-actions";
+import { ExerciseChart } from "./[id]/exercise-chart";
 import { pl } from "date-fns/locale";
-import Link from "next/link";
+import { toast } from "sonner";
 
 // ─── Types ───
 
@@ -102,6 +104,13 @@ function formatWeekLabel(key: unknown) {
   return key;
 }
 
+const TOOLTIP_STYLE = {
+  background: "#18181b",
+  border: "1px solid #27272a",
+  borderRadius: "8px",
+  fontSize: "12px",
+};
+
 // ─── Empty state helper ───
 
 function EmptyChart({ icon: Icon, label }: { icon: React.ElementType; label: string }) {
@@ -109,6 +118,193 @@ function EmptyChart({ icon: Icon, label }: { icon: React.ElementType; label: str
     <div className="flex flex-col items-center justify-center h-48 text-muted-foreground/40">
       <Icon className="h-10 w-10 mb-2" />
       <p className="text-sm">{label}</p>
+    </div>
+  );
+}
+
+// ─── Measurement metrics (each gets its own tab + line chart) ───
+
+const METRICS = [
+  { key: "weightKg", label: "Waga", unit: "kg", color: "#f59e0b" },
+  { key: "bodyFatPct", label: "BF%", unit: "%", color: "#22c55e" },
+  { key: "chestCm", label: "Klatka", unit: "cm", color: "#ef4444" },
+  { key: "waistCm", label: "Talia", unit: "cm", color: "#f97316" },
+  { key: "hipsCm", label: "Biodra", unit: "cm", color: "#a855f7" },
+  { key: "armsCm", label: "Biceps", unit: "cm", color: "#3b82f6" },
+  { key: "thighsCm", label: "Uda", unit: "cm", color: "#14b8a6" },
+] as const;
+
+type MetricKey = (typeof METRICS)[number]["key"];
+
+function metricValue(m: BodyMeasurement, key: MetricKey): number | null {
+  return m[key] as number | null;
+}
+
+function MeasurementChart({ measurements, metricKey }: { measurements: BodyMeasurement[]; metricKey: MetricKey }) {
+  const metric = METRICS.find((m) => m.key === metricKey)!;
+  const points = measurements
+    .filter((m) => metricValue(m, metricKey) != null)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .map((m) => ({ t: new Date(m.date).getTime(), v: metricValue(m, metricKey) as number }));
+
+  if (points.length < 2) {
+    return (
+      <EmptyChart
+        icon={Activity}
+        label={`Dodaj co najmniej 2 pomiary "${metric.label}", aby zobaczyć wykres`}
+      />
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+      <h3 className="text-sm font-semibold mb-4">
+        {metric.label} ({metric.unit})
+      </h3>
+      <div className="h-48 sm:h-56">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={points}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+            <XAxis
+              dataKey="t"
+              type="number"
+              scale="time"
+              domain={["dataMin", "dataMax"]}
+              tickFormatter={(t) => format(new Date(t), "dd.MM")}
+              tick={{ fontSize: 11, fill: "#71717a" }}
+              axisLine={{ stroke: "#27272a" }}
+              tickLine={false}
+            />
+            <YAxis
+              tick={{ fontSize: 11, fill: "#71717a" }}
+              axisLine={false}
+              tickLine={false}
+              domain={["dataMin - 2", "dataMax + 2"]}
+              width={45}
+            />
+            <Tooltip
+              contentStyle={TOOLTIP_STYLE}
+              labelFormatter={(t) => format(new Date(Number(t)), "dd.MM.yyyy")}
+              formatter={(value) => [`${value} ${metric.unit}`, metric.label]}
+            />
+            <Line
+              type="monotone"
+              dataKey="v"
+              stroke={metric.color}
+              strokeWidth={2}
+              dot={{ fill: metric.color, r: 3 }}
+              activeDot={{ fill: metric.color, r: 5 }}
+              connectNulls
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+// ─── Per-exercise detail (fetched on tab select) ───
+
+function ExerciseDetail({ exerciseId, onBack }: { exerciseId: string; onBack: () => void }) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof getExerciseProgress>> | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setData(null);
+    getExerciseProgress(exerciseId)
+      .then((res) => {
+        if (!cancelled) setData(res);
+      })
+      .catch(() => {
+        if (!cancelled) toast.error("Nie udało się pobrać danych ćwiczenia");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [exerciseId]);
+
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-4 sm:p-6 space-y-3">
+        <div className="h-6 w-40 rounded bg-border/30 animate-pulse" />
+        <div className="h-64 rounded bg-border/30 animate-pulse" />
+      </div>
+    );
+  }
+
+  if (!data || data.chartData.length === 0) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-6 text-center">
+        <p className="text-sm text-muted-foreground">
+          Brak danych treningowych dla tego ćwiczenia
+        </p>
+        <button onClick={onBack} className="mt-3 text-xs text-amber-400 hover:text-amber-300">
+          ← Wróć do rekordów
+        </button>
+      </div>
+    );
+  }
+
+  const maxWeight = Math.max(...data.chartData.map((d) => d.maxWeight));
+  const max1rm = Math.max(...data.chartData.map((d) => d.est1RM));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold">{data.exercise.name}</h3>
+        <button
+          onClick={onBack}
+          className="text-xs text-muted-foreground hover:text-amber-400 transition-colors"
+        >
+          ← Wróć do rekordów
+        </button>
+      </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-xl border border-border bg-card p-3">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Max ciężar</span>
+          <p className="text-base font-bold text-amber-400">{maxWeight} kg</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Est. 1RM</span>
+          <p className="text-base font-bold">{max1rm} kg</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Treningów</span>
+          <p className="text-base font-bold">{data.chartData.length}</p>
+        </div>
+      </div>
+
+      {/* Interactive time-axis chart with mode toggle */}
+      <ExerciseChart data={data.chartData} />
+
+      {/* Exercise PRs */}
+      {data.prs.length > 0 && (
+        <div className="rounded-xl border border-border bg-card p-4">
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            Rekordy ćwiczenia
+          </h4>
+          <div className="space-y-1">
+            {data.prs.slice(0, 10).map((pr) => (
+              <div key={pr.id} className="flex items-center justify-between px-2 py-1.5">
+                <span className="text-xs text-muted-foreground">{PR_LABELS[pr.type] ?? pr.type}</span>
+                <span className="text-sm font-semibold tabular-nums text-amber-400">
+                  {pr.type === "reps" ? `${pr.value} powt.` : `${pr.value} kg`}
+                  <span className="text-xs text-muted-foreground font-normal ml-2">
+                    {format(new Date(pr.achievedAt), "dd.MM.yy")}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -129,6 +325,9 @@ export function ProgressCharts({
   const hasData = totalStats.totalWorkouts > 0;
   const [isPending, startTransition] = useTransition();
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+  const [mainTab, setMainTab] = useState<"exercises" | "measurements">("exercises");
+  const [metricTab, setMetricTab] = useState<MetricKey>("weightKg");
+  const [exerciseTabId, setExerciseTabId] = useState<string | null>(null);
 
   const handleDeleteMeasurement = (id: string) => {
     if (!confirm("Na pewno usunąć ten pomiar?")) return;
@@ -139,6 +338,18 @@ export function ProgressCharts({
   };
 
   const visibleMeasurements = bodyMeasurements.filter((m) => !deletedIds.has(m.id));
+
+  // Exercises with records — one tab each (deduped by exercise id)
+  const exerciseTabs = Array.from(
+    new Map(prs.map((p) => [p.exercise.id, { id: p.exercise.id, name: p.exercise.name }])).values()
+  );
+  const activeExercise =
+    exerciseTabId && exerciseTabs.some((e) => e.id === exerciseTabId) ? exerciseTabId : null;
+
+  const tabPill = (active: boolean) =>
+    `rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
+      active ? "bg-amber-500 text-black" : "bg-border/50 text-muted-foreground hover:text-foreground"
+    }`;
 
   return (
     <div className="space-y-5 sm:space-y-6 pb-8">
@@ -209,6 +420,16 @@ export function ProgressCharts({
         </div>
       </div>
 
+      {/* Main tabs */}
+      <div className="flex gap-2">
+        <button onClick={() => setMainTab("exercises")} className={tabPill(mainTab === "exercises")}>
+          💪 Ćwiczenia
+        </button>
+        <button onClick={() => setMainTab("measurements")} className={tabPill(mainTab === "measurements")}>
+          📏 Pomiary
+        </button>
+      </div>
+
       {!hasData ? (
         /* Empty state */
         <div className="rounded-2xl border border-dashed border-zinc-800 p-10 sm:p-16 text-center">
@@ -222,337 +443,100 @@ export function ProgressCharts({
             Wykonaj kilka treningów, aby zobaczyć statystyki i wykresy
           </p>
         </div>
+      ) : mainTab === "exercises" ? (
+        /* ─── Ćwiczenia tab ─── */
+        <div className="space-y-4">
+          {exerciseTabs.length > 0 && (
+            <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+              {exerciseTabs.map((ex) => (
+                <button
+                  key={ex.id}
+                  onClick={() => setExerciseTabId(activeExercise === ex.id ? null : ex.id)}
+                  className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs transition-colors ${
+                    activeExercise === ex.id
+                      ? "bg-amber-500/20 text-amber-400 font-medium"
+                      : "bg-border/50 text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {ex.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {activeExercise ? (
+            <ExerciseDetail exerciseId={activeExercise} onBack={() => setExerciseTabId(null)} />
+          ) : (
+            <>
+              {/* PR history — clicking a record opens its exercise tab */}
+              {prs.length > 0 && (
+                <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+                  <h3 className="text-sm font-semibold mb-4">
+                    🔥 Historia rekordów
+                  </h3>
+                  <div className="space-y-1 max-h-80 overflow-y-auto">
+                    {prs.slice(0, 15).map((pr) => (
+                      <button
+                        key={pr.id}
+                        onClick={() => setExerciseTabId(pr.exercise.id)}
+                        className="w-full flex items-center justify-between rounded-lg px-3 py-2 hover:bg-amber-500/10 transition-colors text-left"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Flame className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+                          <span className="text-sm truncate hover:text-amber-400 transition-colors">
+                            {pr.exercise.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+                          <span className="text-xs text-muted-foreground hidden sm:inline">
+                            {PR_LABELS[pr.type] ?? pr.type}
+                          </span>
+                          <span className="text-sm font-semibold tabular-nums text-amber-400">
+                            {pr.type === "reps" ? `${pr.value}` : `${pr.value} kg`}
+                          </span>
+                          <span className="text-xs text-muted-foreground w-12 sm:w-16 text-right">
+                            {format(new Date(pr.achievedAt), "dd.MM", {
+                              locale: pl,
+                            })}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {exerciseTabs.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  Brak rekordów — wykonuj treningi, aby je zobaczyć
+                </p>
+              )}
+            </>
+          )}
+        </div>
       ) : (
-        <>
-          {/* Weekly volume chart */}
-          <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
-            <h3 className="text-sm font-semibold mb-4">
-              📊 Objętość tygodniowa (kg)
-            </h3>
-            <div className="h-60 sm:h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={weeklyVolume}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                  <XAxis
-                    dataKey="week"
-                    tickFormatter={formatWeekLabel}
-                    tick={{ fontSize: 11, fill: "#71717a" }}
-                    axisLine={{ stroke: "#27272a" }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: "#71717a" }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) =>
-                      v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v
-                    }
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "#18181b",
-                      border: "1px solid #27272a",
-                      borderRadius: "8px",
-                      fontSize: "12px",
-                    }}
-                    labelFormatter={formatWeekLabel}
-                    formatter={(value) => [`${value} kg`, "Objętość"]}
-                  />
-                  <Bar
-                    dataKey="volume"
-                    fill="#f59e0b"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={40}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+        /* ─── Pomiary tab ─── */
+        <div className="space-y-4">
+          {/* Metric tabs */}
+          <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+            {METRICS.map((m) => (
+              <button
+                key={m.key}
+                onClick={() => setMetricTab(m.key)}
+                className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs transition-colors ${
+                  metricTab === m.key
+                    ? "bg-amber-500/20 text-amber-400 font-medium"
+                    : "bg-border/50 text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
           </div>
 
-          {/* Workout frequency chart */}
-          <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
-            <h3 className="text-sm font-semibold mb-4">
-              📅 Treningów w tygodniu
-            </h3>
-            <div className="h-48 sm:h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={workoutFreq}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                  <XAxis
-                    dataKey="week"
-                    tickFormatter={formatWeekLabel}
-                    tick={{ fontSize: 11, fill: "#71717a" }}
-                    axisLine={{ stroke: "#27272a" }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: "#71717a" }}
-                    axisLine={false}
-                    tickLine={false}
-                    allowDecimals={false}
-                    domain={[0, "auto"]}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: "#18181b",
-                      border: "1px solid #27272a",
-                      borderRadius: "8px",
-                      fontSize: "12px",
-                    }}
-                    labelFormatter={formatWeekLabel}
-                    formatter={(value) => [`${value}`, "Treningów"]}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="count"
-                    stroke="#f59e0b"
-                    fill="#f59e0b20"
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          {/* Selected metric line chart */}
+          <MeasurementChart measurements={visibleMeasurements} metricKey={metricTab} />
 
-          {/* Muscle group distribution */}
-          {muscleDist.length > 0 && (
-            <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
-              <h3 className="text-sm font-semibold mb-4">
-                🎯 Rozkład partii mięśniowych
-              </h3>
-              <div className="space-y-2">
-                {muscleDist.slice(0, 8).map((item) => {
-                  const max = muscleDist[0]?.count ?? 1;
-                  const pct = Math.round((item.count / max) * 100);
-                  const groupInfo = MUSCLE_GROUPS.find(
-                    (g) => g.id === item.group
-                  );
-                  return (
-                    <div key={item.group} className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground w-20 sm:w-28 truncate">
-                        {groupInfo?.label ?? item.group}
-                      </span>
-                      <div className="flex-1 h-5 rounded-full bg-zinc-900 overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{
-                            width: `${pct}%`,
-                            backgroundColor: groupInfo?.color ?? "#f59e0b",
-                          }}
-                        />
-                      </div>
-                      <span className="text-xs tabular-nums w-10 text-right text-muted-foreground">
-                        {item.count}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* PR history */}
-          {prs.length > 0 && (
-            <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
-              <h3 className="text-sm font-semibold mb-4">
-                🔥 Historia rekordów
-              </h3>
-              <div className="space-y-1 max-h-80 overflow-y-auto">
-                {prs.slice(0, 15).map((pr) => (
-                  <Link
-                    key={pr.id}
-                    href={`/progress/${pr.exercise.id}`}
-                    className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-amber-500/10 transition-colors"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Flame className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
-                      <span className="text-sm truncate hover:text-amber-400 transition-colors">
-                        {pr.exercise.name}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-                      <span className="text-xs text-muted-foreground hidden sm:inline">
-                        {PR_LABELS[pr.type] ?? pr.type}
-                      </span>
-                      <span className="text-sm font-semibold tabular-nums text-amber-400">
-                        {pr.type === "reps" ? `${pr.value}` : `${pr.value} kg`}
-                      </span>
-                      <span className="text-xs text-muted-foreground w-12 sm:w-16 text-right">
-                        {format(new Date(pr.achievedAt), "dd.MM", {
-                          locale: pl,
-                        })}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Weight chart */}
-          {visibleMeasurements.filter((m) => m.weightKg != null).length >= 2 && (
-            <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
-              <h3 className="text-sm font-semibold mb-4">
-                ⚖️ Waga ciała
-              </h3>
-              <div className="h-48 sm:h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={visibleMeasurements
-                      .filter((m) => m.weightKg != null)
-                      .reverse()
-                      .map((m) => ({
-                        date: format(new Date(m.date), "dd.MM", { locale: pl }),
-                        weight: m.weightKg!,
-                      }))}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 11, fill: "#71717a" }}
-                      axisLine={{ stroke: "#27272a" }}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 11, fill: "#71717a" }}
-                      axisLine={false}
-                      tickLine={false}
-                      domain={["dataMin - 2", "dataMax + 2"]}
-                      width={45}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "#18181b",
-                        border: "1px solid #27272a",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                      formatter={(value) => [`${value} kg`, "Waga"]}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="weight"
-                      stroke="#f59e0b"
-                      strokeWidth={2}
-                      dot={{ fill: "#f59e0b", r: 3 }}
-                      activeDot={{ fill: "#f59e0b", r: 5, strokeWidth: 2, stroke: "#fbbf24" }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-
-          {/* Body fat % chart */}
-          {visibleMeasurements.filter((m) => m.bodyFatPct != null).length >= 2 && (
-            <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
-              <h3 className="text-sm font-semibold mb-4">
-                📉 Body fat %
-              </h3>
-              <div className="h-48 sm:h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={visibleMeasurements
-                      .filter((m) => m.bodyFatPct != null)
-                      .reverse()
-                      .map((m) => ({
-                        date: format(new Date(m.date), "dd.MM", { locale: pl }),
-                        bf: m.bodyFatPct!,
-                      }))}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 11, fill: "#71717a" }}
-                      axisLine={{ stroke: "#27272a" }}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 11, fill: "#71717a" }}
-                      axisLine={false}
-                      tickLine={false}
-                      domain={["dataMin - 2", "dataMax + 2"]}
-                      width={45}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "#18181b",
-                        border: "1px solid #27272a",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                      formatter={(value) => [`${value}%`, "BF%"]}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="bf"
-                      stroke="#22c55e"
-                      strokeWidth={2}
-                      dot={{ fill: "#22c55e", r: 3 }}
-                      activeDot={{ fill: "#22c55e", r: 5 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-
-          {/* Circumference trends */}
-          {visibleMeasurements.filter((m) => m.chestCm != null || m.waistCm != null || m.armsCm != null).length >= 2 && (
-            <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
-              <h3 className="text-sm font-semibold mb-4">
-                📏 Obwody (cm)
-              </h3>
-              <div className="h-48 sm:h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={visibleMeasurements
-                      .filter((m) => m.chestCm != null || m.waistCm != null || m.armsCm != null)
-                      .reverse()
-                      .map((m) => ({
-                        date: format(new Date(m.date), "dd.MM", { locale: pl }),
-                        chest: m.chestCm ?? null,
-                        waist: m.waistCm ?? null,
-                        arms: m.armsCm ?? null,
-                      }))}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 11, fill: "#71717a" }}
-                      axisLine={{ stroke: "#27272a" }}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 11, fill: "#71717a" }}
-                      axisLine={false}
-                      tickLine={false}
-                      domain={["dataMin - 3", "dataMax + 3"]}
-                      width={45}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "#18181b",
-                        border: "1px solid #27272a",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                      }}
-                    />
-                    <Line type="monotone" dataKey="chest" stroke="#ef4444" strokeWidth={2} dot={{ fill: "#ef4444", r: 2 }} connectNulls />
-                    <Line type="monotone" dataKey="waist" stroke="#f59e0b" strokeWidth={2} dot={{ fill: "#f59e0b", r: 2 }} connectNulls />
-                    <Line type="monotone" dataKey="arms" stroke="#3b82f6" strokeWidth={2} dot={{ fill: "#3b82f6", r: 2 }} connectNulls />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex justify-center gap-4 mt-2 text-[10px] text-muted-foreground">
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Klatka</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Talia</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /> Biceps</span>
-              </div>
-            </div>
-          )}
-
-          {/* Body measurements */}
+          {/* Measurement history */}
           {bodyMeasurements.length > 0 && (
             <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
               <h3 className="text-sm font-semibold mb-4">
@@ -618,7 +602,127 @@ export function ProgressCharts({
               </div>
             </div>
           )}
-        </>
+
+          {/* Trends */}
+          <h3 className="text-sm font-semibold pt-2">Trendy treningowe</h3>
+
+          {/* Weekly volume chart */}
+          <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+            <h3 className="text-sm font-semibold mb-4">
+              📊 Objętość tygodniowa (kg)
+            </h3>
+            <div className="h-60 sm:h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={weeklyVolume}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                  <XAxis
+                    dataKey="week"
+                    tickFormatter={formatWeekLabel}
+                    tick={{ fontSize: 11, fill: "#71717a" }}
+                    axisLine={{ stroke: "#27272a" }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: "#71717a" }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v) =>
+                      v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v
+                    }
+                  />
+                  <Tooltip
+                    contentStyle={TOOLTIP_STYLE}
+                    labelFormatter={formatWeekLabel}
+                    formatter={(value) => [`${value} kg`, "Objętość"]}
+                  />
+                  <Bar
+                    dataKey="volume"
+                    fill="#f59e0b"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={40}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Workout frequency chart */}
+          <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+            <h3 className="text-sm font-semibold mb-4">
+              📅 Treningów w tygodniu
+            </h3>
+            <div className="h-48 sm:h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={workoutFreq}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                  <XAxis
+                    dataKey="week"
+                    tickFormatter={formatWeekLabel}
+                    tick={{ fontSize: 11, fill: "#71717a" }}
+                    axisLine={{ stroke: "#27272a" }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: "#71717a" }}
+                    axisLine={false}
+                    tickLine={false}
+                    allowDecimals={false}
+                    domain={[0, "auto"]}
+                  />
+                  <Tooltip
+                    contentStyle={TOOLTIP_STYLE}
+                    labelFormatter={formatWeekLabel}
+                    formatter={(value) => [`${value}`, "Treningów"]}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="count"
+                    stroke="#f59e0b"
+                    fill="#f59e0b20"
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Muscle group distribution */}
+          {muscleDist.length > 0 && (
+            <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
+              <h3 className="text-sm font-semibold mb-4">
+                🎯 Rozkład partii mięśniowych
+              </h3>
+              <div className="space-y-2">
+                {muscleDist.slice(0, 8).map((item) => {
+                  const max = muscleDist[0]?.count ?? 1;
+                  const pct = Math.round((item.count / max) * 100);
+                  const groupInfo = MUSCLE_GROUPS.find(
+                    (g) => g.id === item.group
+                  );
+                  return (
+                    <div key={item.group} className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground w-20 sm:w-28 truncate">
+                        {groupInfo?.label ?? item.group}
+                      </span>
+                      <div className="flex-1 h-5 rounded-full bg-zinc-900 overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${pct}%`,
+                            backgroundColor: groupInfo?.color ?? "#f59e0b",
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs tabular-nums w-10 text-right text-muted-foreground">
+                        {item.count}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

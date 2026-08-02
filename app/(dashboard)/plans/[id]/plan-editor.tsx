@@ -211,21 +211,28 @@ export function PlanEditor({ routine }: Props) {
     }
   }, [routine.id, routine.name, name, description]);
 
-  // ─── Add exercise ───
+  // ─── Add exercises (multi-select from picker) ───
 
-  const handleAddExercise = useCallback(
-    async (exercise: {
+  const handleAddExercises = useCallback(
+    async (exercisesToAdd: {
       id: string;
       name: string;
       equipment: string | null;
       muscles: { muscleGroup: string; isPrimary: boolean }[];
-    }) => {
+    }[]) => {
       setPickerOpen(false);
       try {
-        const slot = await addExerciseToRoutine(routine.id, exercise.id);
-        setExercises((prev) => [...prev, slot]);
+        const added: Awaited<ReturnType<typeof addExerciseToRoutine>>[] = [];
+        for (const ex of exercisesToAdd) {
+          const slot = await addExerciseToRoutine(routine.id, ex.id);
+          added.push(slot);
+        }
+        if (added.length > 0) {
+          setExercises((prev) => [...prev, ...added]);
+          toast.success(`Dodano ${added.length} ${added.length === 1 ? "ćwiczenie" : added.length <= 4 ? "ćwiczenia" : "ćwiczeń"}`);
+        }
       } catch {
-        toast.error("Nie udało się dodać ćwiczenia");
+        toast.error("Nie udało się dodać ćwiczeń");
       }
     },
     [routine.id]
@@ -500,7 +507,7 @@ export function PlanEditor({ routine }: Props) {
       <ExercisePicker
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
-        onSelect={handleAddExercise}
+        onAdd={handleAddExercises}
         workoutExerciseIds={exercises.map((e) => e.exerciseId)}
       />
     </div>

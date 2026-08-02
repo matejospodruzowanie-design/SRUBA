@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, X, Clock } from "lucide-react";
+import { Search, X, Clock, Check } from "lucide-react";
 import { MUSCLE_GROUPS } from "@/lib/constants";
 import { getExerciseImage } from "@/lib/exercise-images";
 import { toast } from "sonner";
@@ -17,7 +17,7 @@ interface Exercise {
 interface Props {
   open: boolean;
   onClose: () => void;
-  onSelect: (exercise: Exercise) => void;
+  onAdd: (exercises: Exercise[]) => void;
   workoutExerciseIds: string[];
 }
 
@@ -46,10 +46,11 @@ function ExerciseImage({ videoUrl, primaryMuscle, size }: {
   );
 }
 
-function ExerciseCard({ exercise, alreadyInWorkout, onClick, variant }: {
+function ExerciseCard({ exercise, alreadyInWorkout, selected, onToggle, variant }: {
   exercise: Exercise;
   alreadyInWorkout: boolean;
-  onClick: () => void;
+  selected: boolean;
+  onToggle: () => void;
   variant: "compact" | "horizontal";
 }) {
   const primaryMuscle = exercise.muscles.find((m) => m.isPrimary)?.muscleGroup;
@@ -62,11 +63,14 @@ function ExerciseCard({ exercise, alreadyInWorkout, onClick, variant }: {
   if (variant === "compact") {
     return (
       <button
-        onClick={onClick}
+        onClick={onToggle}
         disabled={alreadyInWorkout}
-        className={`flex-shrink-0 w-20 rounded-xl border p-2 text-center transition-colors ${
+        aria-pressed={selected}
+        className={`relative flex-shrink-0 w-20 rounded-xl border p-2 text-center transition-colors ${
           alreadyInWorkout
             ? "border-zinc-800 opacity-40 cursor-not-allowed"
+            : selected
+            ? "border-amber-500/60 bg-amber-500/10"
             : "border-border hover:border-amber-500/30 hover:bg-amber-500/5"
         }`}
       >
@@ -74,16 +78,29 @@ function ExerciseCard({ exercise, alreadyInWorkout, onClick, variant }: {
           <ExerciseImage videoUrl={exercise.videoUrl} primaryMuscle={primaryMuscle} size="sm" />
         </div>
         <p className="text-[11px] leading-tight line-clamp-2">{exercise.name}</p>
+        {/* Selection check — top-right corner */}
+        <span
+          className={`absolute top-1 right-1 h-4 w-4 rounded-full border flex items-center justify-center ${
+            selected ? "bg-amber-500 border-amber-500" : "border-border bg-card/80"
+          }`}
+        >
+          {selected && <Check className="h-2.5 w-2.5 text-black" />}
+        </span>
       </button>
     );
   }
 
   return (
     <button
-      onClick={onClick}
+      onClick={onToggle}
       disabled={alreadyInWorkout}
+      aria-pressed={selected}
       className={`w-full text-left rounded-lg p-2.5 transition-colors flex items-center gap-3 ${
-        alreadyInWorkout ? "opacity-40 cursor-not-allowed" : "hover:bg-amber-500/10"
+        alreadyInWorkout
+          ? "opacity-40 cursor-not-allowed"
+          : selected
+          ? "bg-amber-500/10"
+          : "hover:bg-amber-500/10"
       }`}
     >
       <ExerciseImage videoUrl={exercise.videoUrl} primaryMuscle={primaryMuscle} size="lg" />
@@ -96,17 +113,26 @@ function ExerciseCard({ exercise, alreadyInWorkout, onClick, variant }: {
           {muscleLabels}
         </p>
       </div>
+      {/* Checkbox */}
+      <span
+        className={`flex-shrink-0 h-5 w-5 rounded-md border flex items-center justify-center ${
+          selected ? "bg-amber-500 border-amber-500" : "border-border"
+        }`}
+      >
+        {selected && <Check className="h-3 w-3 text-black" />}
+      </span>
     </button>
   );
 }
 
-export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: Props) {
+export function ExercisePicker({ open, onClose, onAdd, workoutExerciseIds }: Props) {
   const [query, setQuery] = useState("");
   const [muscle, setMuscle] = useState<string | null>(null);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [recentExercises, setRecentExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(false);
   const [recentLoading, setRecentLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
 
   const search = useCallback(async () => {
@@ -164,11 +190,12 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
     return () => clearTimeout(timer);
   }, [query, muscle, open, search]);
 
-  // Reset filters on open
+  // Reset filters + selection on open
   useEffect(() => {
     if (open) {
       setQuery("");
       setMuscle(null);
+      setSelectedIds(new Set());
     }
   }, [open]);
 
@@ -180,14 +207,41 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
     ? exercises.filter((e) => !recentIds.has(e.id))
     : exercises;
 
+  // Union of all loaded exercises (recent + search results) for the add action
+  const allLoaded = new Map<string, Exercise>();
+  for (const e of [...recentExercises, ...exercises]) allLoaded.set(e.id, e);
+
+  const toggleSelect = (ex: Exercise) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(ex.id)) next.delete(ex.id);
+      else next.add(ex.id);
+      return next;
+    });
+  };
+
+  const handleAdd = () => {
+    const toAdd = Array.from(selectedIds)
+      .map((id) => allLoaded.get(id))
+      .filter((e): e is Exercise => !!e && !workoutExerciseIds.includes(e.id));
+    onAdd(toAdd);
+    setSelectedIds(new Set());
+  };
+
+  const handleClose = () => {
+    setSelectedIds(new Set());
+    onClose();
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative w-full sm:max-w-lg bg-card border border-border rounded-t-2xl sm:rounded-2xl max-h-[80vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-stretch sm:items-center justify-center p-0 sm:p-4">
+      <div className="absolute inset-0 bg-black/60" onClick={handleClose} />
+      {/* Fullscreen on mobile, centered dialog on ≥sm */}
+      <div className="relative w-full sm:max-w-lg bg-card sm:border sm:border-border sm:rounded-2xl h-dvh sm:h-auto sm:max-h-[85vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-border">
-          <h2 className="font-semibold">Dodaj ćwiczenie</h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground" aria-label="Zamknij wybór ćwiczeń">
+          <h2 className="font-semibold">Dodaj ćwiczenia</h2>
+          <button onClick={handleClose} className="text-muted-foreground hover:text-foreground" aria-label="Zamknij wybór ćwiczeń">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -244,7 +298,8 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
                     key={ex.id}
                     exercise={ex}
                     alreadyInWorkout={workoutExerciseIds.includes(ex.id)}
-                    onClick={() => onSelect(ex)}
+                    selected={selectedIds.has(ex.id)}
+                    onToggle={() => toggleSelect(ex)}
                     variant="compact"
                   />
                 ))}
@@ -275,12 +330,13 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
                       key={ex.id}
                       exercise={ex}
                       alreadyInWorkout={workoutExerciseIds.includes(ex.id)}
-                      onClick={() => onSelect(ex)}
+                      selected={selectedIds.has(ex.id)}
+                      onToggle={() => toggleSelect(ex)}
                       variant="horizontal"
                     />
                   ))}
-              </div>
-            )}
+                </div>
+              )}
             </div>
           ) : exercises.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">
@@ -293,12 +349,37 @@ export function ExercisePicker({ open, onClose, onSelect, workoutExerciseIds }: 
                   key={ex.id}
                   exercise={ex}
                   alreadyInWorkout={workoutExerciseIds.includes(ex.id)}
-                  onClick={() => onSelect(ex)}
+                  selected={selectedIds.has(ex.id)}
+                  onToggle={() => toggleSelect(ex)}
                   variant="horizontal"
                 />
               ))}
             </div>
           )}
+        </div>
+
+        {/* Action bar */}
+        <div className="p-4 border-t border-border flex items-center justify-between gap-3">
+          <span className="text-xs text-muted-foreground">
+            {selectedIds.size > 0
+              ? `Zaznaczono: ${selectedIds.size}`
+              : "Zaznacz ćwiczenia, które chcesz dodać"}
+          </span>
+          <div className="flex gap-2 flex-shrink-0">
+            <button
+              onClick={handleClose}
+              className="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Anuluj
+            </button>
+            <button
+              onClick={handleAdd}
+              disabled={selectedIds.size === 0}
+              className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-black hover:bg-amber-400 disabled:opacity-40 transition-colors"
+            >
+              Dodaj ({selectedIds.size})
+            </button>
+          </div>
         </div>
       </div>
     </div>

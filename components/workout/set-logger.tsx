@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useOptimistic, useTransition } from "react";
+import { useState, useEffect, useRef, useTransition } from "react";
 import { Trash2, Flame, TrendingUp, Pencil, Check, X, Plus, Undo2, Calculator, Thermometer } from "lucide-react";
 import { addSet, deleteSet, updateSet } from "@/app/(dashboard)/workout/actions";
 import { plateCalculator } from "@/lib/fitness-utils";
@@ -54,6 +54,11 @@ function emptyRow(index: number) {
   };
 }
 
+/** Fresh empty input row with a globally unique key (appended after logging). */
+function newRow(counter: number) {
+  return { key: `new-${counter}`, weight: "", reps: "", rpe: "", warmup: false };
+}
+
 export function SetLogger({
   workoutId,
   exerciseId,
@@ -73,8 +78,6 @@ export function SetLogger({
   const [lastLoggedSetId, setLastLoggedSetId] = useState<string | null>(null);
   const [undoCountdown, setUndoCountdown] = useState(0);
   const [plateCalcIndex, setPlateCalcIndex] = useState<number | null>(null);
-  // Track optimistic IDs that were rejected by the server — filter them from display
-  const [rejectedIds, setRejectedIds] = useState<Set<string>>(new Set());
 
   // Inline edit state (for editing already-logged sets)
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
@@ -109,19 +112,33 @@ export function SetLogger({
 
   // Refs for auto-focus after logging
   const weightRefs = useRef<(HTMLInputElement | null)[]>([]);
+  // Unique keys for appended rows and optimistic set ids
+  const rowKeyCounter = useRef(0);
+  const optimisticCounter = useRef(0);
 
-  const [optimisticSets, addOptimisticSet] = useOptimistic(
-    sets,
-    (state: SetWithExercise[], newSet: SetWithExercise) => [...state, newSet]
+  // Displayed sets for this exercise — local state, so a confirmed set stays
+  // visible immediately. The parent round-trip (onSetConfirmed → allSets) is
+  // unreliable inside the pending transition: React drops the optimistic layer
+  // when the base state changes mid-transition, which made sets vanish until
+  // page refresh.
+  const [displaySets, setDisplaySets] = useState<SetWithExercise[]>(() =>
+    sets.filter((s) => s.exerciseId === exerciseId && !s.id.startsWith("optimistic"))
   );
 
-  const exerciseSets = optimisticSets.filter((s) => s.exerciseId === exerciseId && !rejectedIds.has(s.id));
-  const actualSetCount = exerciseSets.filter((s) => !s.id.startsWith("optimistic")).length;
-
-  // Clear rejected IDs when real sets change (parent synced new state)
+  // Re-sync when props change (undo/delete/resume/refresh) — props are
+  // authoritative for the ids they contain; local pending rows are kept.
   useEffect(() => {
-    if (rejectedIds.size > 0) setRejectedIds(new Set());
-  }, [sets.length]);
+    const fromProps = sets.filter((s) => s.exerciseId === exerciseId);
+    setDisplaySets((prev) => {
+      const propsById = new Map(fromProps.map((s) => [s.id, s]));
+      const merged = fromProps.map((s) => prev.find((p) => p.id === s.id) ?? s);
+      const localOnly = prev.filter((p) => !propsById.has(p.id));
+      return [...merged, ...localOnly];
+    });
+  }, [sets, exerciseId]);
+
+  const exerciseSets = displaySets;
+  const actualSetCount = exerciseSets.filter((s) => !s.id.startsWith("optimistic")).length;
 
 
   // Auto-focus first empty weight field after logging
@@ -155,6 +172,8 @@ export function SetLogger({
     const setId = lastLoggedSetId;
     setLastLoggedSetId(null);
     setUndoCountdown(0);
+    // Remove locally first — display must not wait for the parent round-trip
+    setDisplaySets((prev) => prev.filter((s) => s.id !== setId));
     try {
       await deleteSet(setId);
       onDeleteConfirmed?.(setId);
@@ -178,23 +197,26 @@ export function SetLogger({
 
     startTransition(async () => {
       // Build optimistic ID upfront so we can roll back on error in both try and catch
-      const optimisticId = "optimistic-" + Date.now() + "-" + index;
+      const optimisticId = "optimistic-" + optimisticCounter.current++;
 
       try {
-        // Add optimistic set (before clearing row, so data isn't lost on error)
-        addOptimisticSet({
-          id: optimisticId,
-          workoutId,
-          exerciseId,
-          exercise: { id: exerciseId, name: exerciseName } as ExerciseLite,
-          setNumber: exerciseSets.length + 1,
-          weightKg: weightNum ?? null,
-          reps: repsNum,
-          rpe: row.rpe ? parseFloat(row.rpe) : null,
-          completedAt: new Date(),
-          isPR: false,
-          isWarmup: row.warmup,
-        } as SetWithExercise);
+        // Add optimistic set locally (before clearing row, so data isn't lost on error)
+        setDisplaySets((prev) => [
+          ...prev,
+          {
+            id: optimisticId,
+            workoutId,
+            exerciseId,
+            exercise: { id: exerciseId, name: exerciseName } as ExerciseLite,
+            setNumber: prev.length + 1,
+            weightKg: weightNum ?? null,
+            reps: repsNum,
+            rpe: row.rpe ? parseFloat(row.rpe) : null,
+            completedAt: new Date(),
+            isPR: false,
+            isWarmup: row.warmup,
+          } as SetWithExercise,
+        ]);
 
         const result = await addSet({
           workoutId,
@@ -208,16 +230,20 @@ export function SetLogger({
         if ("error" in result) {
           toast.error(result.error);
           // Roll back optimistic set — server rejected it
-          setRejectedIds((prev) => new Set(prev).add(optimisticId));
+          setDisplaySets((prev) => prev.filter((s) => s.id !== optimisticId));
           return;
         }
 
-        // Clear this row only after successful server save
+        // Replace the optimistic row with the confirmed set (local, instant)
+        setDisplaySets((prev) =>
+          prev.map((s) => (s.id === optimisticId ? (result.set as unknown as SetWithExercise) : s))
+        );
+
+        // Remove the logged input row and append a fresh empty one at the END —
+        // the confirmed set stays visible, no empty row appears mid-table
         setRows((prev) => {
-          const next = prev.map((r, i) => {
-            if (i === index) return emptyRow(i + 1);
-            return r;
-          });
+          const next = prev.filter((_, i) => i !== index);
+          next.push(newRow(rowKeyCounter.current++));
           return next;
         });
 
@@ -241,7 +267,7 @@ export function SetLogger({
       } catch {
         toast.error("Nie udało się zapisać serii");
         // Roll back optimistic set on thrown exception
-        setRejectedIds((prev) => new Set(prev).add(optimisticId));
+        setDisplaySets((prev) => prev.filter((s) => s.id !== optimisticId));
       }
     });
   };
@@ -255,6 +281,8 @@ export function SetLogger({
 
   const handleDelete = (setId: string) => {
     if (setId.startsWith("optimistic")) return;
+    // Remove locally first — display must not wait for the parent round-trip
+    setDisplaySets((prev) => prev.filter((s) => s.id !== setId));
     startTransition(async () => {
       try {
         const result = await deleteSet(setId);
@@ -293,11 +321,14 @@ export function SetLogger({
       if ("error" in result) {
         toast.error(result.error as string);
       } else {
-        onUpdateConfirmed?.(editingSetId, {
+        const data = {
           weightKg: editWeight ? parseFloat(editWeight) : null,
           reps: repsNum,
           rpe: editRpe ? parseFloat(editRpe) : null,
-        });
+        };
+        // Update locally first — display must not wait for the parent round-trip
+        setDisplaySets((prev) => prev.map((s) => (s.id === editingSetId ? { ...s, ...data } : s)));
+        onUpdateConfirmed?.(editingSetId, data);
       }
     } catch {
       toast.error("Nie udało się zapisać zmian");
@@ -555,7 +586,7 @@ export function SetLogger({
       {/* Add more rows button */}
       <button
         onClick={() => {
-          setRows((prev) => [...prev, emptyRow(prev.length + 1)]);
+          setRows((prev) => [...prev, newRow(rowKeyCounter.current++)]);
         }}
         className="w-full rounded-lg border border-dashed border-border py-1.5 text-xs text-muted-foreground hover:border-amber-500/30 hover:text-amber-400 transition-colors"
       >

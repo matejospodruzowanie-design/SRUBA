@@ -177,7 +177,6 @@ export async function addSet(input: AddSetInput) {
     ? nextWeightSuggestion(recentSets, minReps, maxReps)
     : null;
 
-  revalidatePath("/workout");
   return { set: { ...workoutSet, isPR: prs.length > 0 }, prs, suggestion };
 }
 
@@ -230,7 +229,6 @@ export async function updateSet(
     });
   }
 
-  revalidatePath("/workout");
   return { ...updated, isPR };
 }
 
@@ -244,7 +242,6 @@ export async function deleteSet(setId: string) {
   if (!existing) return { error: "Nie znaleziono serii" };
 
   await prisma.workoutSet.delete({ where: { id: setId } });
-  revalidatePath("/workout");
   return { ok: true };
 }
 
@@ -359,7 +356,6 @@ export async function removeExerciseFromWorkout(workoutId: string, exerciseId: s
     where: { workoutId, exerciseId },
   });
 
-  revalidatePath("/workout");
   return { ok: true };
 }
 
@@ -411,7 +407,6 @@ export async function finishWorkout(workoutId: string) {
     return { error: "Trening już zakończony" };
   }
 
-  revalidatePath("/workout");
   revalidatePath("/dashboard");
   revalidatePath("/history");
   revalidatePath("/profile");

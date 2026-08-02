@@ -275,7 +275,7 @@ export function PlansContent({ initialRoutines }: Props) {
             className="absolute inset-0 bg-black/60"
             onClick={() => setShowCreate(false)}
           />
-          <div className="relative w-full sm:max-w-md bg-card border border-border rounded-t-2xl sm:rounded-2xl">
+          <div className="relative w-full sm:max-w-md bg-card border border-border rounded-t-2xl sm:rounded-2xl max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h2 className="font-semibold">Nowy plan</h2>
               <button

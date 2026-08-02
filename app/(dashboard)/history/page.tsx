@@ -3,8 +3,8 @@ import { getUser } from "@/lib/session";
 import Link from "next/link";
 import { format, startOfWeek } from "date-fns";
 import { pl } from "date-fns/locale";
-import { Dumbbell, Flame, Clock, ChevronRight } from "lucide-react";
-import { formatDuration } from "@/lib/fitness-utils";
+import { Dumbbell, ChevronRight } from "lucide-react";
+import { HistoryList } from "@/components/history/history-list";
 
 const PAGE_SIZE = 20;
 
@@ -39,7 +39,7 @@ export default async function HistoryPage({
     where: { userId: user.id, isActive: false, endedAt: { not: null } },
   });
 
-  // Group by ISO week
+  // Group by ISO week — pass a serializable structure to the client list
   const weekGroups = new Map<string, typeof workouts>();
   for (const w of workouts) {
     const weekStart = startOfWeek(new Date(w.startedAt), { weekStartsOn: 1 });
@@ -47,6 +47,27 @@ export default async function HistoryPage({
     if (!weekGroups.has(key)) weekGroups.set(key, []);
     weekGroups.get(key)!.push(w);
   }
+
+  const groups = Array.from(weekGroups.entries()).map(([weekKey, weekWorkouts]) => {
+    const weekDate = new Date(weekKey);
+    const weekEnd = new Date(weekDate);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+
+    return {
+      label: `Tydzień ${format(weekDate, "d MMM", { locale: pl })} – ${format(weekEnd, "d MMM yyyy", { locale: pl })}`,
+      workouts: weekWorkouts.map((w) => ({
+        id: w.id,
+        name: w.name,
+        startedAt: w.startedAt,
+        durationSeconds: w.durationSeconds,
+        setCount: w.sets.length,
+        volumeKg: Math.round(
+          w.sets.reduce((sum, s) => sum + (s.weightKg ?? 0) * s.reps, 0)
+        ),
+        prCount: w.sets.filter((s) => s.isPR).length,
+      })),
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -79,103 +100,7 @@ export default async function HistoryPage({
           </Link>
         </div>
       ) : (
-        <div className="space-y-6">
-          {Array.from(weekGroups.entries()).map(([weekKey, weekWorkouts]) => {
-            const weekDate = new Date(weekKey);
-            const weekEnd = new Date(weekDate);
-            weekEnd.setDate(weekEnd.getDate() + 6);
-
-            const weekVolume = weekWorkouts.reduce(
-              (sum, w) =>
-                sum + w.sets.reduce((s, set) => s + (set.weightKg ?? 0) * set.reps, 0),
-              0
-            );
-            const weekPRs = weekWorkouts.reduce(
-              (sum, w) => sum + w.sets.filter((s) => s.isPR).length,
-              0
-            );
-
-            return (
-              <div key={weekKey} className="space-y-2">
-                {/* Week header */}
-                <div className="flex items-center justify-between px-1">
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Tydzień {format(weekDate, "d MMM", { locale: pl })} –{" "}
-                    {format(weekEnd, "d MMM yyyy", { locale: pl })}
-                  </h3>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground/60">
-                    <span>
-                      {weekWorkouts.length} {weekWorkouts.length === 1 ? "trening" : weekWorkouts.length < 5 ? "treningi" : "treningów"}
-                    </span>
-                    <span>{Math.round(weekVolume).toLocaleString()} kg</span>
-                    {weekPRs > 0 && (
-                      <span className="text-amber-400/70">
-                        <Flame className="h-3 w-3 inline mr-0.5" />
-                        {weekPRs}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Workout rows */}
-                {weekWorkouts.map((workout) => {
-                  const volume = workout.sets.reduce(
-                    (sum, s) => sum + (s.weightKg ?? 0) * s.reps,
-                    0
-                  );
-                  const prs = workout.sets.filter((s) => s.isPR).length;
-
-                  return (
-                    <Link
-                      key={workout.id}
-                      href={`/workout/${workout.id}`}
-                      className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3 hover:border-amber-500/20 transition-all group"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="h-9 w-9 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                          <Dumbbell className="h-4 w-4 text-amber-400" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-medium text-sm truncate group-hover:text-amber-400 transition-colors">
-                            {workout.name}
-                          </p>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                            <span>
-                              {format(new Date(workout.startedAt), "EEE, HH:mm", { locale: pl })}
-                            </span>
-                            {workout.durationSeconds && (
-                              <span className="flex items-center gap-0.5">
-                                <Clock className="h-3 w-3" />
-                                {formatDuration(workout.durationSeconds)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3 text-xs flex-shrink-0">
-                        <span className="text-muted-foreground tabular-nums">
-                          {workout.sets.length} serii
-                        </span>
-                        <span className="text-muted-foreground tabular-nums w-16 text-right">
-                          {Math.round(volume).toLocaleString()} kg
-                        </span>
-                        {prs > 0 && (
-                          <span className="text-amber-400 w-12 text-right">
-                            <Flame className="h-3 w-3 inline mr-0.5" />
-                            {prs}
-                          </span>
-                        )}
-                        {prs === 0 && <span className="w-12" />}
-                        <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-foreground" />
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
+        <HistoryList groups={groups} />
       )}
 
       {/* Pagination */}

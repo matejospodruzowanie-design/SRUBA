@@ -11,42 +11,47 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { format } from "date-fns";
-import { pl } from "date-fns/locale";
 
 interface ChartPoint {
   workoutName: string;
   date: Date;
   maxWeight: number;
+  maxReps: number;
   est1RM: number;
   totalVolume: number;
 }
 
-type ChartMode = "weight" | "est1rm" | "volume";
+type ChartMode = "weight" | "volume" | "reps" | "est1rm";
 
-const MODES: { key: ChartMode; label: string }[] = [
-  { key: "weight", label: "Max ciężar (kg)" },
-  { key: "est1rm", label: "Est. 1RM (kg)" },
-  { key: "volume", label: "Objętość (kg)" },
+const MODES: { key: ChartMode; label: string; unit: string }[] = [
+  { key: "weight", label: "Max ciężar", unit: "kg" },
+  { key: "volume", label: "Objętość", unit: "kg" },
+  { key: "reps", label: "Powtórzenia", unit: "powt." },
+  { key: "est1rm", label: "Est. 1RM", unit: "kg" },
 ];
 
 export function ExerciseChart({ data }: { data: ChartPoint[] }) {
   const [mode, setMode] = useState<ChartMode>("weight");
+  const current = MODES.find((m) => m.key === mode)!;
 
+  // Time-scale axis (real timestamps) for interactive scrubbing
   const chartData = data.map((d) => ({
     ...d,
-    label: format(new Date(d.date), "dd.MM"),
+    t: new Date(d.date).getTime(),
     value:
       mode === "weight"
         ? d.maxWeight
-        : mode === "est1rm"
-        ? d.est1RM
-        : Math.round(d.totalVolume),
+        : mode === "volume"
+        ? Math.round(d.totalVolume)
+        : mode === "reps"
+        ? d.maxReps
+        : d.est1RM,
   }));
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 sm:p-6 space-y-3">
       {/* Mode toggle */}
-      <div className="flex gap-1.5">
+      <div className="flex gap-1.5 flex-wrap">
         {MODES.map((m) => (
           <button
             key={m.key}
@@ -62,13 +67,17 @@ export function ExerciseChart({ data }: { data: ChartPoint[] }) {
         ))}
       </div>
 
-      {/* Chart */}
+      {/* Chart — time-scale x axis */}
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
             <XAxis
-              dataKey="label"
+              dataKey="t"
+              type="number"
+              scale="time"
+              domain={["dataMin", "dataMax"]}
+              tickFormatter={(t) => format(new Date(t), "dd.MM")}
               tick={{ fontSize: 11, fill: "#71717a" }}
               axisLine={{ stroke: "#27272a" }}
               tickLine={false}
@@ -87,8 +96,8 @@ export function ExerciseChart({ data }: { data: ChartPoint[] }) {
                 fontSize: "13px",
                 color: "#fafafa",
               }}
-              labelFormatter={(label) => `${label}`}
-              formatter={(value) => [`${value} kg`, ""]}
+              labelFormatter={(t) => format(new Date(Number(t)), "dd.MM.yyyy")}
+              formatter={(value) => [`${value} ${current.unit}`, current.label]}
             />
             <Line
               type="monotone"

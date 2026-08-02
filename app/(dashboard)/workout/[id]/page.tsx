@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
 import { pl } from "date-fns/locale";
-import { ArrowLeft, Clock, Flame, Dumbbell } from "lucide-react";
+import { ArrowLeft, Clock, Flame, Dumbbell, Pencil } from "lucide-react";
 import { formatDuration, setVolume } from "@/lib/fitness-utils";
 import { EQUIPMENT } from "@/lib/constants";
 import { getExerciseImage } from "@/lib/exercise-images";
@@ -81,6 +81,14 @@ export default async function WorkoutDetailPage({
         </div>
         <div className="flex items-center gap-2">
           <SaveAsPlanButton workoutId={workout.id} />
+          {!workout.isActive && (
+            <Link
+              href={`/workout/${workout.id}/edit`}
+              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:border-amber-500/30 hover:text-amber-400 transition-colors"
+            >
+              <Pencil className="h-3.5 w-3.5" /> Edytuj
+            </Link>
+          )}
           <DeleteWorkoutButton workoutId={workout.id} />
         </div>
       </div>

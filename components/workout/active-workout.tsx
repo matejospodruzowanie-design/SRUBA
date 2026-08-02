@@ -181,11 +181,24 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises,
     .filter((s) => !s.id.startsWith("optimistic"))
     .reduce((sum, s) => sum + (s.weightKg ?? 0) * s.reps, 0);
 
-  // ─── Add exercise ───
-  const handleAddExercise = (exercise: Exercise) => {
-    if (!exercises.find((e) => e.id === exercise.id)) {
-      setExercises([...exercises, { id: exercise.id, name: exercise.name, equipment: exercise.equipment, targetSets: undefined, targetReps: undefined, restSeconds: undefined }]);
-    }
+  // ─── Add exercises (multi-select from picker) ───
+  const handleAddExercises = (newExercises: Exercise[]) => {
+    setExercises((prev) => {
+      const existing = new Set(prev.map((e) => e.id));
+      return [
+        ...prev,
+        ...newExercises
+          .filter((e) => !existing.has(e.id))
+          .map((e) => ({
+            id: e.id,
+            name: e.name,
+            equipment: e.equipment,
+            targetSets: undefined,
+            targetReps: undefined,
+            restSeconds: undefined,
+          })),
+      ];
+    });
     setPickerOpen(false);
   };
 
@@ -285,7 +298,13 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises,
 
   // Called when the user confirms finish (finish successful)
   const handleFinished = () => {
+    // Reset local state — the workout is no longer active, so the
+    // beforeunload guard (armed while workoutId is set) must go silent
     setShowFinishModal(false);
+    setWorkoutId(null);
+    setAllSets([]);
+    setExercises([]);
+    setWorkoutName("");
     router.push("/history");
     router.refresh();
   };
@@ -483,7 +502,7 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises,
       <ExercisePicker
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
-        onSelect={handleAddExercise}
+        onAdd={handleAddExercises}
         workoutExerciseIds={exercises.map((e) => e.id)}
       />
 

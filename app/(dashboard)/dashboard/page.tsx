@@ -1,11 +1,8 @@
 import Link from "next/link";
-import { Suspense } from "react";
 import { getUser } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { Dumbbell, TrendingUp, Target, Flame, Zap, ChevronRight, Clock, BarChart3 } from "lucide-react";
 import { SetupCard } from "@/components/onboarding/setup-card";
-import { RecoverySection } from "@/components/recovery/recovery-section";
-import { SkeletonCard } from "@/components/ui/skeleton";
 import { formatDistanceToNow, startOfDay, subDays, isSameDay, isToday, format } from "date-fns";
 import { pl } from "date-fns/locale";
 import { formatDuration } from "@/lib/fitness-utils";
@@ -262,11 +259,6 @@ export default async function DashboardPage() {
           </div>
         </Link>
       )}
-
-      {/* Recovery heatmap — streamed in */}
-      <Suspense fallback={<SkeletonCard className="h-80" />}>
-        <RecoverySection />
-      </Suspense>
 
     </div>
   );
