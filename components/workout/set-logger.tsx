@@ -34,6 +34,8 @@ interface Props {
   sets: SetWithExercise[];
   lastWeight: number | null;
   lastReps: number | null;
+  lastSets?: Array<{ weightKg: number | null; reps: number }>; // full previous session (Hevy/Strong-style prefill)
+  targetReps?: string; // e.g. "8-12" from plan — shown as goal in the header
   onSetAdded: (prs: unknown[], setRpe?: number) => void;
   onSetConfirmed?: (confirmedSet: SetWithExercise) => void;
   onUpdateConfirmed?: (setId: string, data: { weightKg?: number | null; reps?: number; rpe?: number | null }) => void;
@@ -59,6 +61,8 @@ export function SetLogger({
   sets,
   lastWeight,
   lastReps,
+  lastSets,
+  targetReps,
   onSetAdded,
   onSetConfirmed,
   onUpdateConfirmed,
@@ -79,10 +83,29 @@ export function SetLogger({
   const [editRpe, setEditRpe] = useState("");
   const [isEditingPending, setIsEditingPending] = useState(false);
 
-  // Pre-filled rows state — always starts with 3 empty input rows
-  const [rows, setRows] = useState(() =>
-    Array.from({ length: DEFAULT_ROWS }, (_, i) => emptyRow(i + 1))
-  );
+  // Pre-filled rows state — starts with the last session's sets (Hevy/Strong-style
+  // prefill with real values) or 3 empty input rows. Skipped when the exercise
+  // already has logged sets (e.g. resuming an active workout).
+  const [rows, setRows] = useState(() => {
+    const hasLoggedSets = sets.some(
+      (s) => s.exerciseId === exerciseId && !s.id.startsWith("optimistic")
+    );
+    if (!hasLoggedSets && lastSets && lastSets.length > 0) {
+      return lastSets.map((s, i) => ({
+        key: `prefill-${i}`,
+        weight: s.weightKg != null ? String(s.weightKg) : "",
+        reps: s.reps > 0 ? String(s.reps) : "",
+        rpe: "",
+        warmup: false,
+      }));
+    }
+    const initial = Array.from({ length: DEFAULT_ROWS }, (_, i) => emptyRow(i + 1));
+    // Fallback: fill first row with last known weight/reps
+    if (!hasLoggedSets && lastWeight && lastReps) {
+      initial[0] = { ...initial[0], weight: String(lastWeight), reps: String(lastReps) };
+    }
+    return initial;
+  });
 
   // Refs for auto-focus after logging
   const weightRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -100,25 +123,6 @@ export function SetLogger({
     if (rejectedIds.size > 0) setRejectedIds(new Set());
   }, [sets.length]);
 
-  // Auto-fill first empty row with last known weight/reps for faster logging
-  useEffect(() => {
-    if (!lastWeight || !lastReps) return;
-    // Only auto-fill when the first row is completely empty
-    // and there are no logged sets yet (first time seeing this exercise)
-    if (actualSetCount > 0) return;
-    const firstEmpty = rows.findIndex((r) => !r.weight && !r.reps);
-    if (firstEmpty < 0) return;
-    setRows((prev) => {
-      const next = [...prev];
-      next[firstEmpty] = {
-        ...next[firstEmpty],
-        weight: String(lastWeight),
-        reps: String(lastReps),
-      };
-      return next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exerciseId]);
 
   // Auto-focus first empty weight field after logging
   useEffect(() => {
@@ -310,7 +314,9 @@ export function SetLogger({
         <span className="text-center">#</span>
         <span />
         <span className="text-center">kg</span>
-        <span className="text-center">Powt.</span>
+        <span className="text-center" title={targetReps ? `Cel: ${targetReps} powtórzeń` : undefined}>
+          Powt.{targetReps ? ` (cel ${targetReps})` : ""}
+        </span>
         <span className="text-center">RPE</span>
         <span />
       </div>
@@ -511,12 +517,23 @@ export function SetLogger({
       {suggestion && (
         <button
           onClick={() => {
+            // Upper bound of the plan's rep goal (e.g. "8-12" → 12) to prefill reps too
+            const targetMax = targetReps
+              ? (() => {
+                  const parts = targetReps.split("-").map(Number);
+                  return parts[1] && !isNaN(parts[1]) ? parts[1] : null;
+                })()
+              : null;
             setRows((prev) => {
               const next = [...prev];
-              // Fill first empty row's weight with suggestion
+              // Fill first empty row's weight with suggestion (and reps if goal known)
               for (let i = 0; i < next.length; i++) {
                 if (!next[i].weight) {
-                  next[i] = { ...next[i], weight: String(suggestion.weight) };
+                  next[i] = {
+                    ...next[i],
+                    weight: String(suggestion.weight),
+                    reps: targetMax && !next[i].reps ? String(targetMax) : next[i].reps,
+                  };
                   break;
                 }
               }

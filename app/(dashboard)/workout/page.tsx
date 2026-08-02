@@ -34,15 +34,16 @@ export default async function WorkoutPage({ searchParams }: Props) {
       }
     }
 
-    // Fetch last sets for autofill
+    // Fetch last sets for autofill (full previous session — Hevy/Strong-style)
     const lastExercises = await Promise.all(
       resumedExercises.map(async (ex) => {
-        const lastSets = await getLastSets(ex.id, 1);
+        const lastSets = await getLastSets(ex.id, 5);
         const last = lastSets[0];
         return {
           exerciseId: ex.id,
           weightKg: last?.weightKg ?? null,
           reps: last?.reps ?? null,
+          sets: lastSets.map((s) => ({ weightKg: s.weightKg, reps: s.reps })),
         };
       })
     );
@@ -104,15 +105,16 @@ export default async function WorkoutPage({ searchParams }: Props) {
 
       const { workout, planExercises } = result as { workout: { id: string; name: string; startedAt: Date }; planExercises: Array<{ id: string; name: string; equipment: string | null; muscles: Array<{ muscleGroup: string; isPrimary: boolean }>; targetSets?: number; targetReps?: string; restSeconds?: number }> };
 
-      // Fetch last sets for autofill
+      // Fetch last sets for autofill (full previous session — Hevy/Strong-style)
       const lastExercises = await Promise.all(
         planExercises.map(async (ex) => {
-          const lastSets = await getLastSets(ex.id, 1);
+          const lastSets = await getLastSets(ex.id, 5);
           const last = lastSets[0];
           return {
             exerciseId: ex.id,
             weightKg: last?.weightKg ?? null,
             reps: last?.reps ?? null,
+            sets: lastSets.map((s) => ({ weightKg: s.weightKg, reps: s.reps })),
           };
         })
       );

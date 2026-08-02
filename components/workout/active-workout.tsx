@@ -50,7 +50,7 @@ interface Props {
     sets: SetWithExercise[];
   } | null;
   initialExercises: PlanExercise[];
-  lastExercises: { exerciseId: string; weightKg: number | null; reps: number }[];
+  lastExercises: { exerciseId: string; weightKg: number | null; reps: number; sets: { weightKg: number | null; reps: number }[] }[];
   planId?: string; // plan to start from (survives conflict resolution)
 }
 
@@ -248,11 +248,12 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises,
         toast.success(`🔥 Nowy rekord: ${p.exerciseName} — ${typeLabel}: ${valueStr}!`);
       });
     }
-    // Auto-start rest timer with recommended rest (using actual RPE from the set)
-    const rest = recommendedRest(exerciseName, equipment, setRpe ?? null);
+    // Rest from plan (if set) takes precedence — fallback to computed recommendation
+    const currentIdx = exercises.findIndex((e) => e.id === exerciseId);
+    const plannedRest = currentIdx >= 0 ? exercises[currentIdx].restSeconds : undefined;
+    const rest = plannedRest ?? recommendedRest(exerciseName, equipment, setRpe ?? null);
     setRestSeconds(rest);
     // Compute next exercise for rest timer context
-    const currentIdx = exercises.findIndex((e) => e.id === exerciseId);
     const next = currentIdx >= 0 && currentIdx < exercises.length - 1 ? exercises[currentIdx + 1] : null;
     setNextExerciseName(next?.name ?? null);
     setShowRestTimer(true);
@@ -275,6 +276,10 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises,
       setRestTimerExiting(false);
     }, 200);
   };
+
+  // ─── Last session history for an exercise (prefill + PREVIOUS display) ───
+  const lastSetsFor = (exerciseId: string) =>
+    lastExercises.find((le) => le.exerciseId === exerciseId)?.sets ?? [];
 
   const handleFinish = () => setShowFinishModal(true);
 
@@ -399,8 +404,19 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises,
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5 flex-wrap">
                       <span>{completedSets}{exercise.targetSets ? `/${exercise.targetSets}` : ""} serii</span>
+                      {/* Previous session display (Hevy PREVIOUS-style) — shown until first set is logged */}
+                      {completedSets === 0 && lastSetsFor(exercise.id).length > 0 && (
+                        <span className="text-muted-foreground/60">
+                          Poprzednio:{" "}
+                          {lastSetsFor(exercise.id).map((s, i) => (
+                            <span key={i} className="tabular-nums">
+                              {s.weightKg != null ? `${s.weightKg}×${s.reps}` : `${s.reps}`}{i < lastSetsFor(exercise.id).length - 1 ? " · " : ""}
+                            </span>
+                          ))}
+                        </span>
+                      )}
                       {exerciseSets
                         .filter((s) => !s.id.startsWith("optimistic"))
                         .slice(-3)
@@ -431,6 +447,8 @@ export function ActiveWorkout({ initialWorkout, initialExercises, lastExercises,
                     sets={allSets}
                     lastWeight={lastExercises.find((le) => le.exerciseId === exercise.id)?.weightKg ?? null}
                     lastReps={lastExercises.find((le) => le.exerciseId === exercise.id)?.reps ?? null}
+                    lastSets={lastSetsFor(exercise.id)}
+                    targetReps={exercise.targetReps}
                     onSetAdded={(prs, setRpe) => handleSetAdded(exercise.id, exercise.name, exercise.equipment, prs, setRpe)}
                     onSetConfirmed={handleSetConfirmed}
                     onUpdateConfirmed={handleUpdateConfirmed}
