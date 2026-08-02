@@ -4,15 +4,16 @@ import { cookies } from "next/headers";
 const COOKIE_NAME = "sruba-token";
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
-// Lazy on first use — the module must not throw during `next build` page-data
-// collection on hosts that don't inject service env vars into the build
-// (e.g. `railway up`). At runtime the variable IS present, so the guard still
-// protects production.
+// Lazy on first use, and read via a dynamic key so the bundler cannot inline
+// `process.env.AUTH_SECRET` as `undefined` at build time (builds on Railway
+// via `railway up` run without the service's runtime env vars — inlining the
+// missing value would kill auth in production). At runtime the variable IS
+// present, so the guard still protects production.
 let cachedSecret: Uint8Array | null = null;
 
 function getAuthSecret(): Uint8Array {
   if (cachedSecret) return cachedSecret;
-  const secret = process.env.AUTH_SECRET;
+  const secret = process.env["AUTH_SECRET"];
   if (!secret) {
     if (process.env.NODE_ENV === "production") {
       throw new Error("AUTH_SECRET environment variable is required in production");

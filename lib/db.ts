@@ -3,8 +3,13 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-const dbUrl = process.env.TURSO_URL || process.env.DATABASE_URL || "file:./dev.db";
-const authToken = process.env.TURSO_AUTH_TOKEN;
+// Dynamic key access so the bundler does NOT inline these as `undefined`
+// during `next build` (Railway `railway up` builds run without the service's
+// runtime env vars). Values are read from the real environment at runtime.
+const env = (key: string) => process.env[key];
+
+const dbUrl = env("TURSO_URL") || env("DATABASE_URL") || "file:./dev.db";
+const authToken = env("TURSO_AUTH_TOKEN");
 
 function createPrisma() {
   const adapter = new PrismaLibSql({
